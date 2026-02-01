@@ -6,10 +6,46 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-export SYMBOL="$1"
+SYMBOL="$1"
 LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
 LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
 export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-/home/art/.local/venvs/openbb/bin/python3 "$SCRIPT_DIR/openbb-ratios.py" "$SYMBOL"
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+import sys
+
+symbol = "$SYMBOL"
+
+def safe_get(obj, attr, default=None):
+    if obj is None:
+        return default
+    if hasattr(obj, 'model_extra') and obj.model_extra:
+        return obj.model_extra.get(attr, default)
+    return getattr(obj, attr, default)
+
+try:
+    result = obb.equity.fundamental.metrics(symbol=symbol, provider='yfinance')
+    if not result or not result.results:
+        print(json.dumps({"error": "No data found", "symbol": symbol}))
+        sys.exit(1)
+    
+    data = result.results[0]
+    
+    output = {
+        "symbol": symbol,
+        "pe_ratio": safe_get(data, 'pe_ratio'),
+        "forward_pe": safe_get(data, 'forward_pe'),
+        "profit_margin": safe_get(data, 'profit_margin'),
+        "return_on_equity": safe_get(data, 'return_on_equity'),
+        "debt_to_equity": safe_get(data, 'debt_to_equity'),
+        "current_ratio": safe_get(data, 'current_ratio'),
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYTHON
