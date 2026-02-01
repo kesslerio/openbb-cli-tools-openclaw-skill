@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# OpenBB stock quote wrapper for clawdbot (NixOS-compatible) - Multi-ticker support
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-quote SYMBOL [SYMBOL2 ...] [provider]"
+    exit 1
+fi
+
+# Set library path for NixOS
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+export ALPHAVANTAGE_API_KEY="${ALPHAVANTAGE_API_KEY:-0QQ0NV9R8E5I28UI}"
+
+# Detect provider: if last arg is a valid provider, use it
+PROVIDER="yfinance"
+TICKERS=()
+
+for arg in "$@"; do
+    case "$arg" in
+        fmp|intrinio|yfinance)
+            PROVIDER="$arg"
+            ;;
+        *)
+            TICKERS+=("$arg")
+            ;;
+    esac
+done
+
+# Convert tickers to JSON array for Python
+TICKERS_JSON=$(printf '%s\n' "${TICKERS[@]}" | jq -R . | jq -s .)
+
+# Use venv's python directly
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+import sys
+
+PROVIDER = "$PROVIDER"
+TICKERS = json.loads('''$TICKERS_JSON''')
+
+results = []
+for symbol in TICKERS:
+    try:
+        result = obb.equity.price.quote(symbol=symbol, provider=PROVIDER)
+        if result.results:
+            data = result.results[0]
+            results.append({
+                "symbol": symbol,
+                "price": float(data.last_price) if data.last_price else None,
+                "open": float(data.open) if hasattr(data, 'open') and data.open else None,
+                "high": float(data.high) if hasattr(data, 'high') and data.high else None,
+                "low": float(data.low) if hasattr(data, 'low') and data.low else None,
+                "volume": int(data.volume) if hasattr(data, 'volume') and data.volume else None,
+                "prev_close": float(data.prev_close) if hasattr(data, 'prev_close') and data.prev_close else None
+            })
+    except Exception as e:
+        results.append({"symbol": symbol, "error": str(e)})
+
+print(json.dumps(results, indent=2))
+PYTHON

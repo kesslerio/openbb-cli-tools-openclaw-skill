@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# OpenBB valuation tool - multiple valuation methods
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-valuation SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+import os
+import sys
+import json
+from openbb import obb
+
+SYMBOL = os.environ.get('SYMBOL', '')
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+try:
+    # Get current quote
+    quote = obb.equity.price.quote(symbol=SYMBOL, provider='yfinance')
+    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    
+    if not quote or not quote.results:
+        print(json.dumps({"error": "No quote data found", "symbol": SYMBOL}))
+        sys.exit(1)
+    
+    q = quote.results[0]
+    m = metrics.results[0] if metrics and metrics.results else None
+    
+    current_price = safe_get(q, 'last_price')
+    market_cap = safe_get(m, 'market_cap') if m else None
+    pe_ratio = safe_get(m, 'pe_ratio') if m else None
+    pb_ratio = safe_get(m, 'price_to_book') if m else None
+    ps_ratio = safe_get(m, 'price_to_sales') if m else None
+    ev = safe_get(m, 'enterprise_value') if m else None
+    ev_rev = safe_get(m, 'ev_to_revenue') if m else None
+    ev_ebitda = safe_get(m, 'ev_to_ebitda') if m else None
+    
+    # P/E Valuation
+    pe_fair = None
+    if pe_ratio:
+        # Assume fair P/E of 20
+        eps = current_price / pe_ratio if pe_ratio > 0 else None
+        if eps:
+            pe_fair = eps * 20
+    
+    # DCF Simplified
+    fcf = safe_get(m, 'free_cash_flow') if m else None
+    dcf_fair = None
+    if fcf and fcf > 0:
+        # Very simplified: FCF * 15 (like P/E 15 on FCF)
+        dcf_fair = fcf * 15 / 1000000000  # in billions
+    
+    # Comparable multiples
+    comps = {
+        "sector_avg_pe": 25,  # Example sector avg
+        "sector_avg_ps": 8,
+    }
+    
+    # Implied values
+    pe_value = current_price if not pe_fair else pe_fair
+    dcf_value = current_price if not dcf_fair else dcf_fair
+    
+    # Upside/downside
+    pe_upside = None
+    if pe_fair:
+        pe_upside = round((pe_fair - current_price) / current_price * 100, 2) if current_price else None
+    
+    dcf_upside = None
+    if dcf_fair:
+        dcf_upside = round((dcf_fair - current_price) / current_price * 100, 2) if current_price else None
+    
+    # Verdict
+    avg_upside = 0
+    count = 0
+    if pe_upside:
+        avg_upside += pe_upside
+        count += 1
+    if dcf_upside:
+        avg_upside += dcf_upside
+        count += 1
+    
+    if count > 0:
+        avg_upside = avg_upside / count
+    
+    if avg_upside > 20:
+        verdict = "Significantly undervalued"
+    elif avg_upside > 10:
+        verdict = "Undervalued"
+    elif avg_upside > -10:
+        verdict = "Fairly valued"
+    elif avg_upside > -20:
+        verdict = "Overvalued"
+    else:
+        verdict = "Significantly overvalued"
+    
+    output = {
+        "symbol": SYMBOL,
+        "current_price": current_price,
+        "market_cap": market_cap,
+        "valuation_methods": {
+            "pe_based": {
+                "current_pe": pe_ratio,
+                "assumed_fair_pe": 20,
+                "implied_fair_price": round(pe_fair, 2) if pe_fair else None,
+                "upside_pct": pe_upside
+            },
+            "dcf_simplified": {
+                "fcf_billions": round(fcf/1000000000, 2) if fcf else None,
+                "implied_fair_price": round(dcf_fair, 2) if dcf_fair else None,
+                "upside_pct": dcf_upside,
+                "note": "Simplified: FCF * 15"
+            },
+            "multiples": {
+                "pb_ratio": pb_ratio,
+                "ps_ratio": ps_ratio,
+                "ev_to_revenue": ev_rev,
+                "ev_to_ebitda": ev_ebitda
+            }
+        },
+        "average_upside_pct": round(avg_upside, 2) if count > 0 else None,
+        "verdict": verdict,
+        "note": "Simplified valuation. Professional analysis requires DCF with explicit projections."
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": SYMBOL}))
+    sys.exit(1)
+PYEOF

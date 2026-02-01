@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# OpenBB technical indicators (50/200 DMA, Death Cross detection)
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-technicals SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYSCRIPT
+import json
+import sys
+from datetime import datetime, timedelta
+from openbb import obb
+
+symbol = "$SYMBOL"
+
+def calculate_sma(prices, period):
+    """Calculate Simple Moving Average."""
+    if len(prices) < period:
+        return None
+    return sum(prices[-period:]) / period
+
+try:
+    # Fetch 250 trading days of data (need 200 for 200 DMA + buffer)
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+    
+    data = obb.equity.price.historical(
+        symbol=symbol,
+        provider='yfinance',
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d')
+    )
+    
+    if not data or not data.results:
+        print(json.dumps({"error": "No price data available", "symbol": symbol}))
+        sys.exit(1)
+    
+    # Extract closing prices (oldest to newest)
+    prices = []
+    for item in reversed(data.results):
+        close = getattr(item, 'close', None)
+        if close is not None:
+            prices.append(float(close))
+    
+    if len(prices) < 50:
+        print(json.dumps({"error": "Insufficient price data", "symbol": symbol, "data_points": len(prices)}))
+        sys.exit(1)
+    
+    current_price = prices[-1]
+    
+    # Calculate SMAs
+    sma_50 = calculate_sma(prices, 50)
+    sma_200 = calculate_sma(prices, 200) if len(prices) >= 200 else None
+    
+    # Calculate vs 200 DMA
+    vs_200_dma = None
+    vs_200_dma_pct = None
+    if sma_200:
+        vs_200_dma_pct = (current_price - sma_200) / sma_200
+        vs_200_dma = "Above" if current_price > sma_200 else "Below"
+    
+    # Death Cross / Golden Cross detection
+    cross_signal = None
+    if sma_50 and sma_200:
+        if sma_50 > sma_200:
+            cross_signal = "Golden Cross"
+        else:
+            cross_signal = "Death Cross"
+    
+    output = {
+        "symbol": symbol,
+        "current_price": round(current_price, 2),
+        "sma_50": round(sma_50, 2) if sma_50 else None,
+        "sma_200": round(sma_200, 2) if sma_200 else None,
+        "vs_200_dma": vs_200_dma,
+        "vs_200_dma_pct": round(vs_200_dma_pct, 4) if vs_200_dma_pct else None,
+        "cross_signal": cross_signal,
+        "data_points": len(prices)
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYSCRIPT

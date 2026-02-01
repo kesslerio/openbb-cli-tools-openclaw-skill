@@ -1,0 +1,123 @@
+#!/usr/bin/env bash
+# OpenBB earnings calendar and historical EPS data
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-earnings SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+import sys
+from datetime import datetime
+
+symbol = "$SYMBOL"
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+try:
+    output = {
+        "symbol": symbol,
+        "next_earnings": None,
+        "history": [],
+        "track_record": {
+            "beats_4q": 0,
+            "beats_8q": 0,
+            "total_quarters": 0,
+            "avg_surprise_pct": None,
+            "momentum": "neutral"
+        }
+    }
+    
+    # Try to get next earnings date from profile
+    try:
+        profile = obb.equity.profile(symbol=symbol, provider='yfinance')
+        if profile and profile.results:
+            next_date = safe_get(profile.results[0], 'earnings_date')
+            if next_date:
+                if hasattr(next_date, 'year'):
+                    days_until = (next_date - datetime.now().date()).days
+                else:
+                    days_until = None
+                output['next_earnings'] = {
+                    "date": str(next_date),
+                    "days_until": days_until
+                }
+    except:
+        pass
+    
+    # Get historical EPS (requires FMP provider - paid API)
+    try:
+        hist = obb.equity.fundamental.historical_eps(symbol=symbol, provider='fmp', limit=12)
+        if hist and hist.results:
+            surprises = []
+            beats_4q = 0
+            beats_8q = 0
+            
+            for i, item in enumerate(hist.results[:12]):
+                actual = safe_get(item, 'actual_eps')
+                estimate = safe_get(item, 'estimated_eps')
+                date = safe_get(item, 'date')
+                
+                record = {
+                    "date": str(date) if date else None,
+                    "actual_eps": actual,
+                    "estimate_eps": estimate,
+                    "surprise_pct": None,
+                    "beat": None
+                }
+                
+                if actual is not None and estimate is not None and estimate != 0:
+                    surprise = ((actual - estimate) / abs(estimate)) * 100
+                    record['surprise_pct'] = round(surprise, 2)
+                    record['beat'] = actual > estimate
+                    surprises.append(surprise)
+                    
+                    if record['beat']:
+                        if i < 4:
+                            beats_4q += 1
+                        if i < 8:
+                            beats_8q += 1
+                
+                output['history'].append(record)
+            
+            # Calculate track record
+            output['track_record']['beats_4q'] = beats_4q
+            output['track_record']['beats_8q'] = beats_8q
+            output['track_record']['total_quarters'] = len(output['history'])
+            
+            if surprises:
+                avg = sum(surprises) / len(surprises)
+                output['track_record']['avg_surprise_pct'] = round(avg, 2)
+                
+                # Momentum: recent 4Q vs all time
+                recent_4 = surprises[:4] if len(surprises) >= 4 else surprises
+                recent_avg = sum(recent_4) / len(recent_4)
+                
+                if recent_avg > avg + 1:
+                    output['track_record']['momentum'] = "positive"
+                elif recent_avg < avg - 1:
+                    output['track_record']['momentum'] = "negative"
+                else:
+                    output['track_record']['momentum'] = "stable"
+    except:
+        pass
+    
+    # Add note about FMP requirement
+    if not output['history']:
+        output['note'] = "Historical EPS requires FMP API key. Set FMP_API_KEY env var."
+    
+    print(json.dumps(output, indent=2, default=str))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYTHON

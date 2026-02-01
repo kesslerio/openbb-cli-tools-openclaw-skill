@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# OpenBB analyst estimates and price targets
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-estimates SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+import sys
+
+symbol = "$SYMBOL"
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+try:
+    output = {
+        "symbol": symbol,
+        "consensus": {},
+        "price_targets": {},
+        "ratings": {},
+        "note": "Analyst estimates may require paid provider"
+    }
+    
+    # Get current price for upside calculation
+    current_price = None
+    try:
+        quote = obb.equity.price.quote(symbol=symbol, provider='yfinance')
+        if quote and quote.results:
+            current_price = safe_get(quote.results[0], 'last_price')
+    except:
+        pass
+    
+    # Try to get price targets
+    providers = ['yfinance', 'fmp']
+    price_targets = []
+    
+    for provider in providers:
+        try:
+            pt = obb.equity.estimates.price_target(symbol=symbol, provider=provider)
+            if pt and pt.results:
+                for t in pt.results:
+                    target = safe_get(t, 'price_target')
+                    if target:
+                        price_targets.append(target)
+                output['price_targets']['provider'] = provider
+                break
+        except:
+            continue
+    
+    if price_targets:
+        output['price_targets'] = {
+            "high": round(max(price_targets), 2),
+            "low": round(min(price_targets), 2),
+            "average": round(sum(price_targets) / len(price_targets), 2),
+            "num_targets": len(price_targets),
+        }
+        if current_price:
+            output['price_targets']['current_price'] = current_price
+            avg = output['price_targets']['average']
+            if avg and current_price > 0:
+                output['price_targets']['upside_pct'] = round((avg - current_price) / current_price * 100, 2)
+    
+    # Try to get consensus estimates (yfinance returns price targets + recommendation)
+    for provider in providers:
+        try:
+            est = obb.equity.estimates.consensus(symbol=symbol, provider=provider)
+            if est and est.results:
+                item = est.results[0]
+                output['consensus'] = {
+                    "provider": provider,
+                    "recommendation": safe_get(item, 'recommendation'),
+                    "recommendation_mean": safe_get(item, 'recommendation_mean'),
+                    "target_high": safe_get(item, 'target_high'),
+                    "target_low": safe_get(item, 'target_low'),
+                    "target_consensus": safe_get(item, 'target_consensus'),
+                    "target_median": safe_get(item, 'target_median'),
+                    "number_of_analysts": safe_get(item, 'number_of_analysts'),
+                    "current_price": safe_get(item, 'current_price'),
+                }
+                # Calculate upside
+                if output['consensus']['target_consensus'] and output['consensus']['current_price']:
+                    target = output['consensus']['target_consensus']
+                    price = output['consensus']['current_price']
+                    output['consensus']['upside_pct'] = round((target - price) / price * 100, 2)
+                break
+        except:
+            continue
+    
+    print(json.dumps(output, indent=2, default=str))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYTHON

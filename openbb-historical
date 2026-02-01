@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# OpenBB historical performance tool for clawdbot
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-historical SYMBOL [period]"
+    echo "  period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 3y, 5y, ytd (default: 1y)"
+    exit 1
+fi
+
+SYMBOL="$1"
+PERIOD="${2:-1y}"
+
+# Set library path for NixOS
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+# Use venv's python directly - calculate dates in Python
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+from datetime import datetime, timedelta
+
+symbol = "$SYMBOL"
+period = "$PERIOD"
+
+# Calculate date range based on period
+end_date = datetime.now()
+
+period_map = {
+    '1d': 1,
+    '5d': 5,
+    '1mo': 30,
+    '3mo': 90,
+    '6mo': 180,
+    '1y': 365,
+    '2y': 730,
+    '3y': 1095,
+    '5y': 1825
+}
+
+if period == 'ytd':
+    start_date = datetime(end_date.year, 1, 1)
+elif period in period_map:
+    start_date = end_date - timedelta(days=period_map[period])
+else:
+    print(json.dumps({"error": f"Invalid period: {period}"}))
+    exit(1)
+
+try:
+    result = obb.equity.price.historical(
+        symbol=symbol,
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
+        provider='yfinance'
+    )
+    
+    if not result.results:
+        print(json.dumps({"error": "No data found"}))
+        exit(1)
+    
+    first = result.results[0]
+    last = result.results[-1]
+    
+    change_pct = ((last.close - first.close) / first.close) * 100
+    change_abs = last.close - first.close
+    
+    # Calculate high/low during period
+    highs = [r.high for r in result.results]
+    lows = [r.low for r in result.results]
+    period_high = max(highs)
+    period_low = min(lows)
+    
+    output = {
+        "symbol": symbol,
+        "period": period,
+        "start_date": str(first.date),
+        "end_date": str(last.date),
+        "start_price": round(first.close, 2),
+        "end_price": round(last.close, 2),
+        "change_pct": round(change_pct, 2),
+        "change_abs": round(change_abs, 2),
+        "period_high": round(period_high, 2),
+        "period_low": round(period_low, 2),
+        "data_points": len(result.results)
+    }
+    
+    print(json.dumps(output, indent=2))
+    
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+    exit(1)
+PYTHON

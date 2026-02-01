@@ -1,0 +1,130 @@
+#!/usr/bin/env bash
+# OpenBB volatility and risk metrics tool
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-volatility SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+import os
+import sys
+import json
+import math
+from datetime import datetime, timedelta
+from openbb import obb
+
+SYMBOL = os.environ.get('SYMBOL', '')
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+try:
+    # Get 1-year price history
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=365)
+    
+    hist = obb.equity.price.historical(
+        symbol=SYMBOL,
+        provider='yfinance',
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d'),
+        interval='1d'
+    )
+    
+    if not hist or not hist.results:
+        print(json.dumps({"error": "No historical data", "symbol": SYMBOL}))
+        sys.exit(1)
+    
+    data = hist.results
+    closes = [safe_get(d, 'close') for d in data if safe_get(d, 'close')]
+    highs = [safe_get(d, 'high') for d in data if safe_get(d, 'high')]
+    lows = [safe_get(d, 'low') for d in data if safe_get(d, 'low')]
+    
+    if not closes:
+        print(json.dumps({"error": "No price data", "symbol": SYMBOL}))
+        sys.exit(1)
+    
+    current_price = closes[-1]
+    
+    # Daily returns
+    returns = []
+    for i in range(1, len(closes)):
+        if closes[i-1] and closes[i-1] != 0:
+            ret = (closes[i] - closes[i-1]) / closes[i-1]
+            returns.append(ret)
+    
+    # Volatility (annualized)
+    vol_daily = math.sqrt(sum((r - sum(returns)/len(returns))**2 for r in returns) / len(returns)) if returns else 0
+    vol_annual = vol_daily * math.sqrt(252)
+    
+    # 20-day rolling volatility
+    vol_20d = []
+    for i in range(20, len(returns)):
+        window = returns[i-20:i]
+        if window:
+            v = math.sqrt(sum((r - sum(window)/len(window))**2 for r in window) / len(window)) * math.sqrt(252)
+            vol_20d.append(v)
+    
+    vol_20d_current = vol_20d[-1] if vol_20d else None
+    
+    # Max drawdown
+    peak = max(closes[:1])
+    max_dd = 0
+    for price in closes:
+        if price > peak:
+            peak = price
+        dd = (price - peak) / peak
+        if dd < max_dd:
+            max_dd = dd
+    
+    # Beta (simplified - vs market proxy S&P 500)
+    # Note: This is placeholder - real beta requires market data
+    beta = None
+    
+    # Sharpe Ratio (assuming 5% risk-free rate)
+    risk_free = 0.05
+    annual_return = (closes[-1] - closes[0]) / closes[0] if closes[0] else 0
+    sharpe = (annual_return - risk_free) / vol_annual if vol_annual > 0 else None
+    
+    # Price range
+    price_52w_high = max(highs) if highs else None
+    price_52w_low = min(lows) if lows else None
+    pct_off_high = (current_price - price_52w_high) / price_52w_high if price_52w_high else None
+    pct_off_low = (current_price - price_52w_low) / price_52w_low if price_52w_low else None
+    
+    output = {
+        "symbol": SYMBOL,
+        "current_price": current_price,
+        "volatility": {
+            "daily": round(vol_daily, 4),
+            "annual": round(vol_annual, 4),
+            "vol_20d": round(vol_20d_current, 4) if vol_20d_current else None,
+            "note": "Annualized volatility based on 1-year daily returns"
+        },
+        "risk_metrics": {
+            "max_drawdown": round(max_dd, 4),
+            "sharpe_ratio": round(sharpe, 2) if sharpe else None,
+            "beta": beta
+        },
+        "price_range": {
+            "52w_high": round(price_52w_high, 2) if price_52w_high else None,
+            "52w_low": round(price_52w_low, 2) if price_52w_low else None,
+            "pct_off_high": round(pct_off_high, 4) if pct_off_high else None,
+            "pct_off_low": round(pct_off_low, 4) if pct_off_low else None
+        },
+        "data_points": len(closes),
+        "note": "Beta requires market index data. Sharpe ratio assumes 5% risk-free rate."
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": SYMBOL}))
+    sys.exit(1)
+PYEOF

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# OpenBB financial ratios tool
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-ratios SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+/home/art/.local/venvs/openbb/bin/python3 "$SCRIPT_DIR/openbb-ratios.py" "$SYMBOL"

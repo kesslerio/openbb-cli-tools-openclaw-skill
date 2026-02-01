@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# OpenBB company profile tool - sector, industry, description, etc.
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-profile SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+# Set library path for NixOS
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+# Use venv's python directly
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+
+symbol = "$SYMBOL"
+
+try:
+    # Get company profile
+    result = obb.equity.profile(symbol=symbol, provider='yfinance')
+    
+    if not result.results:
+        print(json.dumps({"error": "No profile data found"}))
+        exit(1)
+    
+    data = result.results[0]
+    
+    # Extract profile information
+    output = {
+        "symbol": symbol,
+        "name": getattr(data, 'name', None),
+        "sector": getattr(data, 'sector', None),
+        "industry": getattr(data, 'industry', None),
+        "country": getattr(data, 'country', None),
+        "website": getattr(data, 'website', None),
+        "description": getattr(data, 'description', None),
+        "ceo": getattr(data, 'ceo', None),
+        "employees": getattr(data, 'employees', None),
+        "address": getattr(data, 'address', None),
+        "city": getattr(data, 'city', None),
+        "state": getattr(data, 'state', None),
+        "zip": getattr(data, 'zip', None),
+        "phone": getattr(data, 'phone', None)
+    }
+    
+    print(json.dumps(output, indent=2))
+    
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+    exit(1)
+PYTHON

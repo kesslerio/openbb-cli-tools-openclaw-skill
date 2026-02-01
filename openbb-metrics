@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# OpenBB key metrics tool - P/E, margins, ROE, EPS, etc.
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-metrics SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+# Set library path for NixOS
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+# Use venv's python directly
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+
+symbol = "$SYMBOL"
+
+try:
+    # Get key metrics
+    result = obb.equity.fundamental.metrics(symbol=symbol, provider='yfinance')
+    
+    if not result.results:
+        print(json.dumps({"error": "No metrics data found"}))
+        exit(1)
+    
+    data = result.results[0]
+    
+    # Extract key metrics
+    output = {
+        "symbol": symbol,
+        "market_cap": getattr(data, 'market_cap', None),
+        "pe_ratio": getattr(data, 'pe_ratio', None),
+        "forward_pe": getattr(data, 'forward_pe', None),
+        "peg_ratio": getattr(data, 'peg_ratio', None),
+        "price_to_book": getattr(data, 'price_to_book', None),
+        "price_to_sales": getattr(data, 'price_to_sales', None),
+        "enterprise_value": getattr(data, 'enterprise_value', None),
+        "ev_to_ebitda": getattr(data, 'ev_to_ebitda', None),
+        "ev_to_revenue": getattr(data, 'ev_to_revenue', None),
+        "profit_margin": getattr(data, 'profit_margin', None),
+        "operating_margin": getattr(data, 'operating_margin', None),
+        "return_on_assets": getattr(data, 'return_on_assets', None),
+        "return_on_equity": getattr(data, 'return_on_equity', None),
+        "revenue": getattr(data, 'revenue', None),
+        "revenue_per_share": getattr(data, 'revenue_per_share', None),
+        "earnings_per_share": getattr(data, 'earnings_per_share', None),
+        "book_value_per_share": getattr(data, 'book_value_per_share', None),
+        "current_ratio": getattr(data, 'current_ratio', None),
+        "debt_to_equity": getattr(data, 'debt_to_equity', None)
+    }
+    
+    print(json.dumps(output, indent=2))
+    
+except Exception as e:
+    print(json.dumps({"error": str(e)}))
+    exit(1)
+PYTHON

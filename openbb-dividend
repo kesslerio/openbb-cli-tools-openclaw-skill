@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# OpenBB dividend analysis tool
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-dividend SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+import os
+import sys
+import json
+from openbb import obb
+
+SYMBOL = os.environ.get('SYMBOL', '')
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+def calc_cagr(start, end, years):
+    if start and end and start > 0 and end > 0 and years > 0:
+        try:
+            return (end / start) ** (1/years) - 1
+        except:
+            return None
+    return None
+
+try:
+    # Get metrics
+    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    
+    # Get quote for current price
+    quote = obb.equity.price.quote(symbol=SYMBOL, provider='yfinance')
+    current_price = None
+    if quote and quote.results:
+        current_price = safe_get(quote.results[0], 'last_price')
+    
+    # Get dividend data
+    divs = obb.equity.fundamental.dividends(symbol=SYMBOL, provider='yfinance', limit=20)
+    
+    result = metrics.results[0] if metrics and metrics.results else None
+    
+    # Extract dividend metrics
+    dividend_yield = safe_get(result, 'dividend_yield') if result else None
+    payout_ratio = safe_get(result, 'payout_ratio') if result else None
+    fcf = safe_get(result, 'free_cash_flow') if result else None
+    net_income = safe_get(result, 'net_income') if result else None
+    trailing_div = safe_get(result, 'trailing_dividend_yield') if result else None
+    
+    # Process dividend history (yfinance uses ex_dividend_date and amount)
+    div_history = []
+    if divs and divs.results:
+        for d in list(divs.results)[-10:]:  # Most recent 10 dividends (list is oldest first)
+            div_history.append({
+                "ex_date": str(safe_get(d, 'ex_dividend_date', '')),
+                "amount": safe_get(d, 'amount'),
+            })
+        div_history.reverse()  # Most recent first
+    
+    # Calculate dividend stats
+    div_amounts = [d['amount'] for d in div_history if d['amount']]
+    if div_amounts:
+        annual_div = sum(div_amounts[:4]) if len(div_amounts) >= 4 else sum(div_amounts)
+        div_growth = calc_cagr(div_amounts[-1] if len(div_amounts) > 4 else 0, div_amounts[0], 5) if len(div_amounts) >= 5 else None
+    else:
+        annual_div = None
+        div_growth = None
+    
+    # FCF coverage of dividends
+    fcf_coverage = None
+    if fcf and annual_div and annual_div > 0:
+        # Convert annual_div from yield% to actual if needed
+        if annual_div < 1:  # Likely a percentage
+            annual_div_amount = annual_div * current_price if current_price else 0
+        else:
+            annual_div_amount = annual_div
+        fcf_coverage = fcf / annual_div_amount if annual_div_amount else None
+    
+    # Safety assessment
+    safety_factors = []
+    if payout_ratio and payout_ratio < 0.5:
+        safety_factors.append("Low payout ratio (<50%)")
+    elif payout_ratio and payout_ratio < 0.75:
+        safety_factors.append("Moderate payout ratio (50-75%)")
+    else:
+        safety_factors.append("High payout ratio (>75%) - risk if earnings decline")
+    
+    if fcf_coverage and fcf_coverage > 1.5:
+        safety_factors.append("Strong FCF coverage (>1.5x)")
+    elif fcf_coverage and fcf_coverage > 1.0:
+        safety_factors.append("Adequate FCF coverage (>1x)")
+    
+    # Verdict
+    if dividend_yield and dividend_yield > 0.03:
+        yield_level = "high"
+    elif dividend_yield and dividend_yield > 0.015:
+        yield_level = "moderate"
+    elif dividend_yield and dividend_yield > 0:
+        yield_level = "low"
+    else:
+        yield_level = "none"
+    
+    if yield_level == "none":
+        verdict = "No dividend"
+    elif payout_ratio and payout_ratio > 0.9:
+        verdict = "Unsafe - payout exceeds earnings"
+    elif fcf_coverage and fcf_coverage < 0.8:
+        verdict = "Risky - FCF doesn't cover dividends"
+    elif payout_ratio and payout_ratio > 0.75:
+        verdict = "Moderate - high payout ratio"
+    else:
+        verdict = "Safe dividend payer"
+    
+    output = {
+        "symbol": SYMBOL,
+        "current_price": current_price,
+        "dividend": {
+            "yield": dividend_yield,
+            "trailing_yield": trailing_div,
+            "annual_estimated": annual_div,
+            "growth_5y_cagr": round(div_growth, 4) if div_growth else None,
+            "history": div_history
+        },
+        "payout_ratio": payout_ratio,
+        "fcf_coverage": round(fcf_coverage, 2) if fcf_coverage else None,
+        "safety": {
+            "factors": safety_factors,
+            "verdict": verdict,
+            "yield_level": yield_level
+        },
+        "note": "Using yfinance provider. FMP provides more detailed data."
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": SYMBOL}))
+    sys.exit(1)
+PYEOF

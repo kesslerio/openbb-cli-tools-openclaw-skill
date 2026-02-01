@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# OpenBB growth profile tool - comprehensive growth metrics
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-growth-profile SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+import os
+import sys
+import json
+from openbb import obb
+
+SYMBOL = os.environ.get('SYMBOL', '')
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+def calc_cagr(start, end, years):
+    if start and end and start > 0 and end > 0 and years > 0:
+        try:
+            return (end / start) ** (1/years) - 1
+        except:
+            return None
+    return None
+
+def calc_yoy(current, prior):
+    if current and prior and prior != 0:
+        return (current - abs(prior)) / abs(prior)
+    return None
+
+try:
+    # Get income statement for revenue/eps growth
+    income = obb.equity.fundamental.income(symbol=SYMBOL, provider='yfinance', limit=5)
+    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    
+    if not income or not income.results:
+        print(json.dumps({"error": "No income data found", "symbol": SYMBOL}))
+        sys.exit(1)
+    
+    data = income.results
+    metric_data = metrics.results[0] if metrics and metrics.results else None
+    
+    # Extract data
+    revenues = [safe_get(d, 'total_revenue') for d in data]
+    net_incomes = [safe_get(d, 'net_income') for d in data]
+    eps = [safe_get(d, 'diluted_eps') for d in data]
+    
+    # Revenue
+    revenue_ttm = revenues[0] if revenues else None
+    revenue_yoy = calc_yoy(revenues[0], revenues[1]) if len(revenues) > 1 else None
+    revenue_3y = calc_cagr(revenues[3], revenues[0], 3) if len(revenues) >= 4 else None
+    
+    # Net Income
+    ni_ttm = net_incomes[0] if net_incomes else None
+    ni_yoy = calc_yoy(net_incomes[0], net_incomes[1]) if len(net_incomes) > 1 else None
+    
+    # EPS
+    eps_ttm = eps[0] if eps else None
+    eps_yoy = calc_yoy(eps[0], eps[1]) if len(eps) > 1 else None
+    
+    # Current metrics
+    net_margin = safe_get(metric_data, 'profit_margin') if metric_data else None
+    revenue_growth_metric = safe_get(metric_data, 'revenue_growth') if metric_data else None
+    earnings_growth_metric = safe_get(metric_data, 'earnings_growth') if metric_data else None
+    
+    # Growth profile
+    growth_profile = {
+        "revenue": {
+            "ttm": revenue_ttm,
+            "yoy": round(revenue_yoy, 4) if revenue_yoy else None,
+            "3y_cagr": round(revenue_3y, 4) if revenue_3y else None
+        },
+        "net_income": {
+            "ttm": ni_ttm,
+            "yoy": round(ni_yoy, 4) if ni_yoy else None
+        },
+        "eps": {
+            "ttm": eps_ttm,
+            "yoy": round(eps_yoy, 4) if eps_yoy else None
+        }
+    }
+    
+    # Margins
+    margins = {
+        "gross_margin": safe_get(metric_data, 'gross_margin'),
+        "operating_margin": safe_get(metric_data, 'operating_margin'),
+        "net_margin": net_margin
+    }
+    
+    # Determine trend
+    trend = "stable"
+    if revenue_yoy and revenue_3y:
+        if revenue_yoy > revenue_3y + 0.02:
+            trend = "accelerating"
+        elif revenue_yoy < revenue_3y - 0.02:
+            trend = "decelerating"
+    
+    output = {
+        "symbol": SYMBOL,
+        "growth_profile": growth_profile,
+        "margins": margins,
+        "revenue_growth_metric": revenue_growth_metric,
+        "earnings_growth_metric": earnings_growth_metric,
+        "trend": trend,
+        "note": "Growth calculated from quarterly income statements. TTM = trailing 12 months, YoY = year over year, CAGR = compound annual growth rate."
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": SYMBOL}))
+    sys.exit(1)
+PYEOF

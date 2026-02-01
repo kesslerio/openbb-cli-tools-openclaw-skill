@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+# OpenBB EV/NTM Revenue calculator
+# Estimates NTM revenue from TTM × (1 + growth rate)
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-ev-ntm SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYSCRIPT
+import json
+import sys
+from openbb import obb
+
+symbol = "$SYMBOL"
+
+def safe_get(obj, attr, default=None):
+    if obj is None:
+        return default
+    val = getattr(obj, attr, None)
+    if val is not None:
+        return val
+    if hasattr(obj, 'model_extra') and obj.model_extra:
+        return obj.model_extra.get(attr, default)
+    return default
+
+try:
+    # Get market cap from profile
+    profile = obb.equity.profile(symbol=symbol, provider='yfinance')
+    market_cap = None
+    if profile and profile.results:
+        market_cap = safe_get(profile.results[0], 'market_cap')
+    
+    # Get TTM revenue and growth from income statement
+    income = obb.equity.fundamental.income(symbol=symbol, provider='yfinance', limit=2)
+    ttm_revenue = None
+    revenue_growth = None
+    
+    if income and income.results and len(income.results) >= 2:
+        current = income.results[0]
+        prior = income.results[1]
+        
+        ttm_revenue = safe_get(current, 'total_revenue')
+        prior_revenue = safe_get(prior, 'total_revenue')
+        
+        if ttm_revenue and prior_revenue and prior_revenue > 0:
+            revenue_growth = (ttm_revenue - prior_revenue) / prior_revenue
+    
+    # Calculate NTM revenue estimate
+    ntm_revenue = None
+    if ttm_revenue and revenue_growth is not None:
+        ntm_revenue = ttm_revenue * (1 + revenue_growth)
+    
+    # Calculate EV (simplified: market cap only)
+    # Note: Full EV = Market Cap + Debt - Cash
+    ev = market_cap
+    
+    # Calculate EV/NTM Rev
+    ev_ntm_rev = None
+    if ev and ntm_revenue and ntm_revenue > 0:
+        ev_ntm_rev = ev / ntm_revenue
+    
+    output = {
+        "symbol": symbol,
+        "market_cap": market_cap,
+        "ttm_revenue": ttm_revenue,
+        "revenue_growth": round(revenue_growth, 4) if revenue_growth else None,
+        "ntm_revenue_estimate": round(ntm_revenue, 0) if ntm_revenue else None,
+        "ev_simplified": ev,
+        "ev_ntm_rev": round(ev_ntm_rev, 2) if ev_ntm_rev else None,
+        "note": "EV simplified (market cap only). NTM estimated from TTM * (1 + growth)."
+    }
+    
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYSCRIPT

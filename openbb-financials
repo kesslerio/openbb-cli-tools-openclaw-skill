@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+# OpenBB financial statements tool
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-financials SYMBOL [statement] [years]"
+    exit 1
+fi
+
+SYMBOL="$1"
+STATEMENT="${2:-income}"
+YEARS="${3:-5}"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+# Write and execute Python script
+/home/art/.local/venvs/openbb/bin/python3 << PYSCRIPT
+import os
+import sys
+import json
+from openbb import obb
+
+symbol = "$SYMBOL"
+statement = "$STATEMENT"
+years = int("$YEARS")
+
+def safe_get(obj, attr, default=None):
+    if obj is None:
+        return default
+    # First check direct attribute
+    val = getattr(obj, attr, None)
+    if val is not None:
+        return val
+    # Then check model_extra
+    if hasattr(obj, 'model_extra') and obj.model_extra:
+        return obj.model_extra.get(attr, default)
+    return default
+
+def calc_yoy(current, prior):
+    if current and prior and prior != 0:
+        return (current - abs(prior)) / abs(prior)
+    return None
+
+def safe_round(value, decimals=4):
+    """Round value if not None, otherwise return None"""
+    if value is not None:
+        return round(value, decimals)
+    return None
+
+def process_income(data):
+    if not data or not data.results:
+        return None
+    periods = []
+    revenues = []
+    net_incomes = []
+    for item in data.results:
+        period = {
+            "date": str(safe_get(item, 'period_ending', '')),
+            "revenue": safe_get(item, 'total_revenue'),
+            "gross_profit": safe_get(item, 'gross_profit'),
+            "operating_income": safe_get(item, 'operating_income'),
+            "net_income": safe_get(item, 'net_income'),
+            "eps_diluted": safe_get(item, 'diluted_earnings_per_share'),
+        }
+        if period['revenue'] and period['revenue'] > 0:
+            if period['gross_profit']:
+                period['gross_margin'] = safe_round(period['gross_profit'] / period['revenue'])
+            if period['net_income']:
+                period['net_margin'] = safe_round(period['net_income'] / period['revenue'])
+        periods.append(period)
+        revenues.append(period['revenue'])
+        net_incomes.append(period['net_income'])
+    for i in range(len(periods) - 1):
+        periods[i]['revenue_yoy'] = safe_round(calc_yoy(revenues[i], revenues[i+1]))
+        periods[i]['net_income_yoy'] = safe_round(calc_yoy(net_incomes[i], net_incomes[i+1]))
+    return {"periods": periods}
+
+def process_cash_flow(data, income_data=None):
+    """Process cash flow statement data, optionally using income data for margin calculations."""
+    if not data or not data.results:
+        return None
+    
+    # Build revenue lookup from income data if available
+    revenue_by_date = {}
+    if income_data and income_data.results:
+        for item in income_data.results:
+            date_str = str(safe_get(item, 'period_ending', ''))
+            revenue = safe_get(item, 'total_revenue')
+            if date_str and revenue:
+                revenue_by_date[date_str] = revenue
+    
+    periods = []
+    for item in data.results:
+        date_str = str(safe_get(item, 'period_ending', ''))
+        
+        # Get cash flow values from model_extra (where yfinance stores them)
+        extra = getattr(item, 'model_extra', {}) or {}
+        
+        operating_cf = extra.get('operating_cash_flow')
+        capex = extra.get('capital_expenditure')
+        fcf = extra.get('free_cash_flow')
+        sbc = extra.get('stock_based_compensation')
+        
+        # Calculate FCF if not directly available
+        if fcf is None and operating_cf is not None and capex is not None:
+            fcf = operating_cf + capex  # capex is typically negative
+        
+        period = {
+            "date": date_str,
+            "operating_cash_flow": operating_cf,
+            "capital_expenditure": capex,
+            "free_cash_flow": fcf,
+            "stock_based_compensation": sbc,
+        }
+        
+        # Calculate margins if we have revenue
+        revenue = revenue_by_date.get(date_str)
+        if revenue and revenue > 0:
+            period['revenue'] = revenue
+            if fcf is not None:
+                period['fcf_margin'] = safe_round(fcf / revenue)
+            if sbc is not None:
+                period['sbc_percent_revenue'] = safe_round(sbc / revenue)
+            if fcf is not None and sbc is not None:
+                period['dilution_adj_fcf_margin'] = safe_round((fcf - sbc) / revenue)
+        
+        periods.append(period)
+    
+    return {"periods": periods}
+
+try:
+    output = {"symbol": symbol, "statement": statement}
+    income_data = None
+    
+    if statement in ['income', 'all', 'cash']:
+        # Always fetch income for revenue (needed for margin calculations)
+        income_data = obb.equity.fundamental.income(symbol=symbol, provider='yfinance', limit=years)
+        if statement in ['income', 'all']:
+            output['income'] = process_income(income_data)
+    
+    if statement in ['cash', 'all']:
+        cash_data = obb.equity.fundamental.cash(symbol=symbol, provider='yfinance', limit=years)
+        output['cash_flow'] = process_cash_flow(cash_data, income_data)
+    
+    print(json.dumps(output, indent=2))
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYSCRIPT

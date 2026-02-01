@@ -1,0 +1,129 @@
+#!/usr/bin/env bash
+# OpenBB quality scoring tool
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-quality SYMBOL"
+    exit 1
+fi
+
+export SYMBOL="$1"
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+import os
+import sys
+import json
+from openbb import obb
+
+SYMBOL = os.environ.get('SYMBOL', '')
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+def calc_score(value, thresholds, reverse=False):
+    if value is None:
+        return None
+    if reverse:
+        if value <= thresholds[0]: return 10
+        elif value <= thresholds[1]: return 8
+        elif value <= thresholds[2]: return 6
+        elif value <= thresholds[3]: return 4
+        else: return 2
+    else:
+        if value >= thresholds[0]: return 10
+        elif value >= thresholds[1]: return 8
+        elif value >= thresholds[2]: return 6
+        elif value >= thresholds[3]: return 4
+        else: return 2
+
+try:
+    result = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    if not result or not result.results:
+        print(json.dumps({"error": "No data found", "symbol": SYMBOL}))
+        sys.exit(1)
+    
+    data = result.results[0]
+    roic = safe_get(data, 'return_on_invested_capital')
+    roe = safe_get(data, 'roe')
+    net_margin = safe_get(data, 'profit_margin')
+    operating_margin = safe_get(data, 'operating_margin')
+    revenue_growth = safe_get(data, 'revenue_growth')
+    debt_to_equity = safe_get(data, 'debt_to_equity')
+    current_ratio = safe_get(data, 'current_ratio')
+    fcf = safe_get(data, 'free_cash_flow')
+    net_income = safe_get(data, 'net_income')
+    
+    # Profitability
+    profit_components = []
+    profit_score = 0
+    for val, thresh, name in [(roic, [0.25, 0.20, 0.15, 0.10], "ROIC"),
+                               (roe, [0.30, 0.25, 0.20, 0.15], "ROE"),
+                               (net_margin, [0.25, 0.20, 0.15, 0.10], "Net Margin"),
+                               (operating_margin, [0.30, 0.25, 0.20, 0.15], "Operating Margin")]:
+        if val:
+            s = calc_score(val, thresh)
+            profit_score += s
+            profit_components.append({"metric": name, "value": round(val, 3), "score": s})
+    if profit_score > 0:
+        profit_score = round(profit_score / 4, 1)
+    
+    # Growth
+    growth_score = calc_score(revenue_growth, [0.25, 0.20, 0.15, 0.10]) if revenue_growth else None
+    growth_components = [{"metric": "Revenue Growth", "value": round(revenue_growth, 3) if revenue_growth else None, "score": growth_score}] if revenue_growth else []
+    
+    # Health
+    health_components = []
+    health_score = 0
+    if debt_to_equity:
+        s = calc_score(debt_to_equity, [0.3, 0.5, 1.0, 1.5], reverse=True)
+        health_score += s
+        health_components.append({"metric": "Debt/Equity", "value": round(debt_to_equity, 2), "score": s})
+    if current_ratio:
+        s = calc_score(current_ratio, [2.0, 1.5, 1.2, 1.0])
+        health_score += s
+        health_components.append({"metric": "Current Ratio", "value": round(current_ratio, 2), "score": s})
+    if health_score > 0:
+        health_score = round(health_score / 2, 1)
+    
+    # Cash
+    cash_components = []
+    cash_score = 0
+    if fcf and net_income and net_income > 0:
+        conv = fcf / net_income
+        s = calc_score(conv, [1.0, 0.9, 0.8, 0.6])
+        cash_score = s
+        cash_components.append({"metric": "FCF Conversion", "value": round(conv, 2), "score": s})
+    
+    scores = [s for s in [profit_score, growth_score, health_score, cash_score] if s and s > 0]
+    overall = round(sum(scores) / len(scores), 1) if scores else None
+    
+    if overall and overall >= 8:
+        verdict = "Excellent quality"
+    elif overall and overall >= 6:
+        verdict = "High quality"
+    elif overall and overall >= 4:
+        verdict = "Average quality"
+    elif overall and overall >= 2:
+        verdict = "Below average"
+    else:
+        verdict = "Insufficient data"
+    
+    output = {
+        "symbol": SYMBOL,
+        "quality_score": overall,
+        "breakdown": {
+            "profitability": {"score": profit_score, "weight": 0.4, "components": profit_components},
+            "growth": {"score": growth_score, "weight": 0.25, "components": growth_components},
+            "financial_health": {"score": health_score, "weight": 0.2, "components": health_components},
+            "cash_conversion": {"score": cash_score, "weight": 0.15, "components": cash_components}
+        },
+        "verdict": verdict
+    }
+    print(json.dumps(output, indent=2))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": SYMBOL}))
+    sys.exit(1)
+PYEOF

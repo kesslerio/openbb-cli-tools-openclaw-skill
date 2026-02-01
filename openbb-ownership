@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# OpenBB institutional/insider ownership data
+
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-ownership SYMBOL"
+    exit 1
+fi
+
+SYMBOL="$1"
+
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+from openbb import obb
+import json
+import sys
+
+symbol = "$SYMBOL"
+
+def safe_get(obj, attr, default=None):
+    return getattr(obj, attr, default) if obj else default
+
+def get_provider():
+    """Try providers in order."""
+    providers = ['fmp', 'intrinio', 'sec']
+    for p in providers:
+        try:
+            test = obb.equity.ownership.major_holders(symbol='AAPL', provider=p, limit=1)
+            if test:
+                return p
+        except:
+            continue
+    return None
+
+try:
+    output = {
+        "symbol": symbol,
+        "institutional": {
+            "top_holders": [],
+            "total_pct": None,
+            "note": "Limited data - requires paid provider (fmp/intrinio)"
+        },
+        "insider": {
+            "recent_transactions": [],
+            "note": "Limited data - requires paid provider (fmp/intrinio)"
+        }
+    }
+    
+    # Try to find available provider
+    provider = get_provider()
+    
+    if provider:
+        # Get major holders
+        try:
+            holders = obb.equity.ownership.major_holders(symbol=symbol, provider=provider, limit=10)
+            if holders and holders.results:
+                for i, holder in enumerate(holders.results[:10]):
+                    output['institutional']['top_holders'].append({
+                        "rank": i + 1,
+                        "name": safe_get(holder, 'holder_name'),
+                        "shares": safe_get(holder, 'shares'),
+                        "pct": safe_get(holder, 'weight'),
+                        "value": safe_get(holder, 'market_value'),
+                    })
+                
+                weights = [h.get('pct') for h in output['institutional']['top_holders'] if h.get('pct')]
+                if weights:
+                    output['institutional']['total_pct'] = round(sum(weights), 2)
+                output['institutional']['provider'] = provider
+        except Exception as e:
+            output['institutional']['error'] = f"Provider {provider}: {str(e)}"
+        
+        # Get insider trading
+        try:
+            insider = obb.equity.ownership.insider_trading(symbol=symbol, provider=provider, limit=10)
+            if insider and insider.results:
+                for txn in insider.results:
+                    output['insider']['recent_transactions'].append({
+                        "name": safe_get(txn, 'owner_name'),
+                        "title": safe_get(txn, 'owner_title'),
+                        "transaction": safe_get(txn, 'transaction_type'),
+                        "shares": safe_get(txn, 'shares_traded'),
+                        "price": safe_get(txn, 'acquisition_or_disposition_price'),
+                        "date": str(safe_get(txn, 'filing_date') or ''),
+                    })
+                output['insider']['provider'] = provider
+        except Exception as e:
+            output['insider']['error'] = f"Provider {provider}: {str(e)}"
+    else:
+        output['note'] = "No available provider for ownership data. Requires API key (fmp/intrinio)."
+    
+    print(json.dumps(output, indent=2, default=str))
+
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
+PYTHON
