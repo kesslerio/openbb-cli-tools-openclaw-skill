@@ -1,36 +1,41 @@
-#!/usr/bin/env python3
-"""OpenBB stock quote wrapper for clawdbot"""
-import sys
-import os
+#!/usr/bin/env bash
+# OpenBB simple single-ticker quote (Python alternative to openbb-quote)
 
-# Set library path for NixOS
-os.environ['LD_LIBRARY_PATH'] = f"/nix/store/*-gcc-*/lib:{os.environ.get('LD_LIBRARY_PATH', '')}"
+if [ $# -lt 1 ]; then
+    echo "Usage: openbb-get-quote SYMBOL [provider]"
+    exit 1
+fi
 
-# Activate venv
-sys.path.insert(0, '/home/art/.local/venvs/openbb/lib/python3.12/site-packages')
+SYMBOL="$1"
+PROVIDER="${2:-yfinance}"
 
+LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
+LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
+export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
+
+/home/art/.local/venvs/openbb/bin/python3 << PYTHON
 from openbb import obb
 import json
 
-if len(sys.argv) < 2:
-    print("Usage: openbb-get-quote SYMBOL [provider]")
-    sys.exit(1)
+symbol = "$SYMBOL"
+provider = "$PROVIDER"
 
-symbol = sys.argv[1].upper()
-provider = sys.argv[2] if len(sys.argv) > 2 else "yfinance"
-
-result = obb.equity.price.quote(symbol=symbol, provider=provider)
-data = result.results[0]
-
-# Print JSON output
-print(json.dumps({
-    "symbol": symbol,
-    "price": float(data.last_price) if data.last_price else None,
-    "open": float(data.open) if hasattr(data, 'open') and data.open else None,
-    "high": float(data.high) if hasattr(data, 'high') and data.high else None,
-    "low": float(data.low) if hasattr(data, 'low') and data.low else None,
-    "volume": int(data.volume) if hasattr(data, 'volume') and data.volume else None,
-    "prev_close": float(data.prev_close) if hasattr(data, 'prev_close') and data.prev_close else None,
-    "change": float(data.change) if hasattr(data, 'change') and data.change else None,
-    "change_percent": float(data.change_percent) if hasattr(data, 'change_percent') and data.change_percent else None,
-}, indent=2))
+try:
+    result = obb.equity.price.quote(symbol=symbol, provider=provider)
+    if result.results:
+        data = result.results[0]
+        output = {
+            "symbol": symbol,
+            "price": float(data.last_price) if data.last_price else None,
+            "open": float(data.open) if hasattr(data, 'open') and data.open else None,
+            "high": float(data.high) if hasattr(data, 'high') and data.high else None,
+            "low": float(data.low) if hasattr(data, 'low') and data.low else None,
+            "volume": int(data.volume) if hasattr(data, 'volume') and data.volume else None,
+            "prev_close": float(data.prev_close) if hasattr(data, 'prev_close') and data.prev_close else None
+        }
+        print(json.dumps(output, indent=2))
+    else:
+        print(json.dumps({"error": "No data returned", "symbol": symbol}))
+except Exception as e:
+    print(json.dumps({"error": str(e), "symbol": symbol}))
+PYTHON
