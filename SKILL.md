@@ -12,7 +12,8 @@ Fetch stock market data using OpenBB SDK CLI wrappers. All output is JSON.
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `openbb-quote` | Current price, OHLCV | `openbb-quote AAPL` |
+| `openbb-quote` | Current price, OHLCV (multi-ticker) | `openbb-quote AAPL` |
+| `openbb-get-quote` | Current price (single ticker) | `openbb-get-quote AAPL` |
 | `openbb-ratios` | P/E, margins, ROE, debt | `openbb-ratios MSFT` |
 | `openbb-financials` | Income/cash flow statements | `openbb-financials GOOGL income 5` |
 | `openbb-growth-profile` | Revenue/earnings growth | `openbb-growth-profile NVDA` |

@@ -22,7 +22,8 @@ ln -s /path/to/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
 
 | Script | Description | Default Provider |
 |--------|-------------|------------------|
-| `openbb-quote` | Current price, OHLCV | yfinance (supports fmp, intrinio) |
+| `openbb-quote` | Current price, OHLCV (multi-ticker) | yfinance (supports fmp, intrinio) |
+| `openbb-get-quote` | Current price (single ticker, Python) | yfinance |
 | `openbb-ratios` | P/E, P/S, margins, ROE, debt/equity | yfinance |
 | `openbb-profile` | Company info (name, sector, employees) | yfinance |
 | `openbb-growth-profile` | Revenue/earnings growth, margin trends | yfinance |
