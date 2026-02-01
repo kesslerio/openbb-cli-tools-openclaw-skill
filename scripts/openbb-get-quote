@@ -16,6 +16,7 @@ export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
 /home/art/.local/venvs/openbb/bin/python3 << PYTHON
 from openbb import obb
 import json
+import sys
 
 symbol = "$SYMBOL"
 provider = "$PROVIDER"
@@ -36,6 +37,8 @@ try:
         print(json.dumps(output, indent=2))
     else:
         print(json.dumps({"error": "No data returned", "symbol": symbol}))
+        sys.exit(1)
 except Exception as e:
     print(json.dumps({"error": str(e), "symbol": symbol}))
+    sys.exit(1)
 PYTHON
