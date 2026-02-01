@@ -1,22 +1,13 @@
-# OpenBB Stock Data Skill 📈
+# OpenBB CLI Tools
 
-OpenClaw skill for fetching stock market data via OpenBB SDK.
-
-## Installation
-
-```bash
-# Clone to your skills directory
-git clone https://github.com/kesslerio/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
-
-# Or symlink if cloned elsewhere
-ln -s /path/to/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
-```
+Bash wrapper scripts for the [OpenBB SDK](https://openbb.co/) providing quick CLI access to stock data.
 
 ## Requirements
 
-- Python 3.11+ with OpenBB SDK: `pip install openbb`
-- `jq` for multi-ticker support
-- (Optional) FMP API key for enhanced earnings/ownership data
+- Python 3.11+ with OpenBB SDK installed
+- `jq` (used by `openbb-quote` for multi-ticker support)
+- NixOS: scripts handle `LD_LIBRARY_PATH` automatically
+- Optional: FMP API key for enhanced data (see below)
 
 ## Tools
 
@@ -39,47 +30,70 @@ ln -s /path/to/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
 | `openbb-earnings` | Next earnings + EPS history | yfinance + FMP |
 | `openbb-ownership` | Institutional ownership | fmp (falls back to intrinio, sec) |
 
+**Note:** `openbb-get-quote` also exists as a simpler Python alternative to `openbb-quote`.
+
 ## Usage
 
-All scripts output JSON:
-
 ```bash
-./scripts/openbb-quote AAPL
-./scripts/openbb-ratios MSFT
-./scripts/openbb-financials GOOGL income 5  # 5 years
-./scripts/openbb-historical NVDA 1y
+openbb-quote AAPL
+openbb-quote AAPL MSFT GOOGL        # Multiple tickers
+openbb-quote AAPL fmp               # Specify provider
+openbb-ratios MSFT
+openbb-financials GOOGL income 5   # 5 years of income statements
+openbb-historical NVDA 1y
 ```
 
-Multiple tickers:
-```bash
-./scripts/openbb-quote AAPL MSFT GOOGL
-```
+All output is JSON.
 
-Specify provider:
-```bash
-./scripts/openbb-quote AAPL fmp
-```
+## Installation
+
+1. Install OpenBB SDK: `pip install openbb`
+2. Install jq: `apt install jq` / `brew install jq` / `nix-shell -p jq`
+3. Add scripts to PATH: `export PATH="/path/to/scripts:$PATH"`
+4. (Optional) Set `FMP_API_KEY` for enhanced earnings/ownership data (see below)
 
 ## Data Providers
 
 ### yfinance (Default - Free, No API Key)
 
-Most tools use yfinance by default. Works for quotes, financials, ratios, dividends, estimates, technicals.
+Most tools use yfinance by default, which is free and requires no API key. Works for:
+- Price quotes, OHLCV data
+- Financial statements (income, balance sheet, cash flow)
+- Key ratios and metrics
+- Dividend history
+- Analyst estimates and recommendations
+- Technical indicators
+- Next earnings date
 
-### FMP (Optional)
+### FMP (Financial Modeling Prep)
 
-Some tools benefit from FMP for additional data:
+Some tools benefit from FMP for additional data. Some tools fall back to FMP automatically.
+
+#### Getting an FMP API Key
+
+1. Sign up at [financialmodelingprep.com](https://site.financialmodelingprep.com/register)
+2. Get your API key from the dashboard
+3. Set the environment variable:
+   ```bash
+   export FMP_API_KEY="your_api_key_here"
+   ```
+
+See [FMP pricing](https://site.financialmodelingprep.com/developer/docs/pricing) for current tier limits and features.
+
+#### What Each Tool Uses
 
 | Tool | Without FMP | With FMP (paid) |
 |------|-------------|-----------------|
+| `openbb-quote` | yfinance (default) | Can specify `fmp` as provider arg |
+| `openbb-estimates` | yfinance, then tries fmp fallback | Enhanced estimates data |
 | `openbb-earnings` | Next earnings date (yfinance) | + Historical EPS with beat/miss tracking |
 | `openbb-ownership` | Falls back to intrinio/sec | Full institutional ownership data |
 
-Setup:
-1. Sign up at [financialmodelingprep.com](https://site.financialmodelingprep.com/register)
-2. `export FMP_API_KEY="your_key"`
+#### Recommendation
 
-See [FMP pricing](https://site.financialmodelingprep.com/developer/docs/pricing) for tier details.
+- **Most users**: The yfinance-based tools cover typical needs (quotes, financials, ratios, dividends, estimates)
+- **Active traders**: Consider FMP for earnings surprise tracking
+- **Institutional analysis**: FMP provides richer ownership data
 
 ## License
 
