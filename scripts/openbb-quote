@@ -27,32 +27,37 @@ for arg in "$@"; do
     esac
 done
 
-# Convert tickers to JSON array for Python
-TICKERS_JSON=$(printf '%s\n' "${TICKERS[@]}" | jq -R . | jq -s .)
+# Export for Python
+export _OPENBB_PROVIDER="$PROVIDER"
+export _OPENBB_TICKERS="$(printf '%s\n' "${TICKERS[@]}")"
 
-# Use venv's python directly
-/home/art/.local/venvs/openbb/bin/python3 << PYTHON
+# Use venv's python with full OpenBB SDK
+/home/art/.local/venvs/openbb/bin/python3 << 'PYTHON'
 from openbb import obb
 import json
-import sys
+import os
 
-PROVIDER = "$PROVIDER"
-TICKERS = json.loads('''$TICKERS_JSON''')
+PROVIDER = os.environ.get('_OPENBB_PROVIDER', 'yfinance')
+TICKERS = [t.strip().upper() for t in os.environ.get('_OPENBB_TICKERS', '').split('\n') if t.strip()]
 
 results = []
 for symbol in TICKERS:
+    if not symbol:
+        continue
     try:
         result = obb.equity.price.quote(symbol=symbol, provider=PROVIDER)
         if result.results:
             data = result.results[0]
             results.append({
                 "symbol": symbol,
-                "price": float(data.last_price) if data.last_price else None,
-                "open": float(data.open) if hasattr(data, 'open') and data.open else None,
-                "high": float(data.high) if hasattr(data, 'high') and data.high else None,
-                "low": float(data.low) if hasattr(data, 'low') and data.low else None,
-                "volume": int(data.volume) if hasattr(data, 'volume') and data.volume else None,
-                "prev_close": float(data.prev_close) if hasattr(data, 'prev_close') and data.prev_close else None
+                "price": float(data.last_price) if data.last_price is not None else None,
+                "open": float(data.open) if hasattr(data, 'open') and data.open is not None else None,
+                "high": float(data.high) if hasattr(data, 'high') and data.high is not None else None,
+                "low": float(data.low) if hasattr(data, 'low') and data.low is not None else None,
+                "volume": int(data.volume) if hasattr(data, 'volume') and data.volume is not None else None,
+                "prev_close": float(data.prev_close) if hasattr(data, 'prev_close') and data.prev_close is not None else None,
+                "change": float(data.change) if hasattr(data, 'change') and data.change is not None else None,
+                "change_percent": float(data.change_percent) if hasattr(data, 'change_percent') and data.change_percent is not None else None
             })
     except Exception as e:
         results.append({"symbol": symbol, "error": str(e)})

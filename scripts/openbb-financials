@@ -129,15 +129,89 @@ def process_cash_flow(data, income_data=None):
     
     return {"periods": periods}
 
+def process_balance_sheet(data):
+    """Process balance sheet data with key financial health metrics."""
+    if not data or not data.results:
+        return None
+    
+    periods = []
+    for item in data.results:
+        date_str = str(safe_get(item, 'period_ending', ''))
+        extra = getattr(item, 'model_extra', {}) or {}
+        
+        # Core balance sheet items
+        period = {
+            "date": date_str,
+            # Assets
+            "cash_and_equivalents": extra.get('cash_and_cash_equivalents'),
+            "short_term_investments": extra.get('short_term_investments'),
+            "total_current_assets": extra.get('total_current_assets'),
+            "total_non_current_assets": extra.get('total_non_current_assets'),
+            "total_assets": extra.get('total_assets'),
+            # Liabilities
+            "total_current_liabilities": extra.get('current_liabilities'),
+            "total_non_current_liabilities": extra.get('total_non_current_liabilities_net_minority_interest'),
+            "total_liabilities": extra.get('total_liabilities_net_minority_interest'),
+            # Equity
+            "total_equity": extra.get('total_common_equity'),
+            "retained_earnings": extra.get('retained_earnings'),
+            # Debt
+            "total_debt": extra.get('total_debt'),
+            "long_term_debt": extra.get('long_term_debt'),
+            "net_debt": extra.get('net_debt'),
+            # Shares
+            "shares_outstanding": extra.get('ordinary_shares_number'),
+        }
+        
+        # Calculate key ratios
+        total_assets = period['total_assets']
+        total_equity = period['total_equity']
+        total_liabilities = period['total_liabilities']
+        current_assets = period['total_current_assets']
+        current_liabilities = period['total_current_liabilities']
+        
+        if total_assets and total_assets > 0:
+            # Asset composition
+            if period['cash_and_equivalents'] is not None:
+                period['cash_to_assets'] = safe_round(period['cash_and_equivalents'] / total_assets)
+            if total_equity is not None:
+                period['equity_to_assets'] = safe_round(total_equity / total_assets)
+            if total_liabilities is not None:
+                period['liabilities_to_assets'] = safe_round(total_liabilities / total_assets)
+
+        # Liquidity ratios
+        if current_liabilities and current_liabilities > 0:
+            if current_assets is not None:
+                period['current_ratio'] = safe_round(current_assets / current_liabilities)
+            cash = period['cash_and_equivalents'] or 0
+            if period['short_term_investments'] is not None:
+                cash += period['short_term_investments']
+            period['cash_ratio'] = safe_round(cash / current_liabilities)
+
+        # Leverage ratios
+        if total_equity and total_equity > 0:
+            if period['total_debt'] is not None:
+                period['debt_to_equity'] = safe_round(period['total_debt'] / total_equity)
+            if total_liabilities is not None:
+                period['liabilities_to_equity'] = safe_round(total_liabilities / total_equity)
+        
+        periods.append(period)
+    
+    return {"periods": periods}
+
 try:
     output = {"symbol": symbol, "statement": statement}
     income_data = None
     
-    if statement in ['income', 'all', 'cash']:
+    if statement in ['income', 'all', 'cash', 'balance']:
         # Always fetch income for revenue (needed for margin calculations)
         income_data = obb.equity.fundamental.income(symbol=symbol, provider='yfinance', limit=years)
         if statement in ['income', 'all']:
             output['income'] = process_income(income_data)
+    
+    if statement in ['balance', 'all']:
+        balance_data = obb.equity.fundamental.balance(symbol=symbol, provider='yfinance', limit=years)
+        output['balance_sheet'] = process_balance_sheet(balance_data)
     
     if statement in ['cash', 'all']:
         cash_data = obb.equity.fundamental.cash(symbol=symbol, provider='yfinance', limit=years)
