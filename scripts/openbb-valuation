@@ -41,7 +41,6 @@ try:
     pe_ratio = safe_get(m, 'pe_ratio') if m else None
     pb_ratio = safe_get(m, 'price_to_book') if m else None
     ps_ratio = safe_get(m, 'price_to_sales') if m else None
-    ev = safe_get(m, 'enterprise_value') if m else None
     ev_rev = safe_get(m, 'ev_to_revenue') if m else None
     ev_ebitda = safe_get(m, 'ev_to_ebitda') if m else None
     
@@ -55,44 +54,43 @@ try:
     
     # DCF Simplified
     fcf = safe_get(m, 'free_cash_flow') if m else None
+    shares_outstanding_est = None
+    if market_cap and market_cap > 0 and current_price and current_price > 0:
+        shares_outstanding_est = market_cap / current_price
+
+    dcf_implied_market_cap = None
     dcf_fair = None
     if fcf and fcf > 0:
-        # Very simplified: FCF * 15 (like P/E 15 on FCF)
-        dcf_fair = fcf * 15 / 1000000000  # in billions
-    
-    # Comparable multiples
-    comps = {
-        "sector_avg_pe": 25,  # Example sector avg
-        "sector_avg_ps": 8,
-    }
-    
-    # Implied values
-    pe_value = current_price if not pe_fair else pe_fair
-    dcf_value = current_price if not dcf_fair else dcf_fair
+        # Very simplified: implied equity value = FCF * 15.
+        dcf_implied_market_cap = fcf * 15
+        if shares_outstanding_est and shares_outstanding_est > 0:
+            dcf_fair = dcf_implied_market_cap / shares_outstanding_est
     
     # Upside/downside
     pe_upside = None
-    if pe_fair:
+    if pe_fair is not None and current_price and current_price > 0:
         pe_upside = round((pe_fair - current_price) / current_price * 100, 2) if current_price else None
     
     dcf_upside = None
-    if dcf_fair:
+    if dcf_fair is not None and current_price and current_price > 0:
         dcf_upside = round((dcf_fair - current_price) / current_price * 100, 2) if current_price else None
     
     # Verdict
     avg_upside = 0
     count = 0
-    if pe_upside:
+    if pe_upside is not None:
         avg_upside += pe_upside
         count += 1
-    if dcf_upside:
+    if dcf_upside is not None:
         avg_upside += dcf_upside
         count += 1
     
     if count > 0:
         avg_upside = avg_upside / count
     
-    if avg_upside > 20:
+    if count == 0:
+        verdict = "Insufficient valuation inputs"
+    elif avg_upside > 20:
         verdict = "Significantly undervalued"
     elif avg_upside > 10:
         verdict = "Undervalued"
@@ -116,9 +114,11 @@ try:
             },
             "dcf_simplified": {
                 "fcf_billions": round(fcf/1000000000, 2) if fcf else None,
+                "estimated_shares_outstanding": int(round(shares_outstanding_est)) if shares_outstanding_est else None,
+                "implied_market_cap_billions": round(dcf_implied_market_cap/1000000000, 2) if dcf_implied_market_cap else None,
                 "implied_fair_price": round(dcf_fair, 2) if dcf_fair else None,
                 "upside_pct": dcf_upside,
-                "note": "Simplified: FCF * 15"
+                "note": "Simplified: implied market cap = FCF * 15, then converted to per-share value"
             },
             "multiples": {
                 "pb_ratio": pb_ratio,
