@@ -32,6 +32,14 @@ def calc_cagr(start, end, years):
             return None
     return None
 
+def normalize_yield_ratio(value):
+    if value is None:
+        return None
+    if value < 0:
+        return None
+    # Some providers return percentage points (e.g. 2.58), others return ratio (e.g. 0.0258).
+    return value / 100 if value > 1 else value
+
 try:
     # Get metrics
     metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
@@ -48,11 +56,13 @@ try:
     result = metrics.results[0] if metrics and metrics.results else None
     
     # Extract dividend metrics
-    dividend_yield = safe_get(result, 'dividend_yield') if result else None
+    dividend_yield_raw = safe_get(result, 'dividend_yield') if result else None
+    trailing_div_raw = safe_get(result, 'trailing_dividend_yield') if result else None
+    dividend_yield = normalize_yield_ratio(dividend_yield_raw)
+    trailing_div = normalize_yield_ratio(trailing_div_raw)
     payout_ratio = safe_get(result, 'payout_ratio') if result else None
     fcf = safe_get(result, 'free_cash_flow') if result else None
-    net_income = safe_get(result, 'net_income') if result else None
-    trailing_div = safe_get(result, 'trailing_dividend_yield') if result else None
+    market_cap = safe_get(result, 'market_cap') if result else None
     
     # Process dividend history (yfinance uses ex_dividend_date and amount)
     div_history = []
@@ -73,29 +83,37 @@ try:
         annual_div = None
         div_growth = None
     
-    # FCF coverage of dividends
+    # Estimate shares outstanding from quote + market cap.
+    shares_outstanding_est = None
+    if market_cap and market_cap > 0 and current_price and current_price > 0:
+        shares_outstanding_est = market_cap / current_price
+
+    # FCF coverage of dividends (total FCF / total annual dividend cash outflow).
+    annual_div_cash_total = None
+    if annual_div and annual_div > 0 and shares_outstanding_est and shares_outstanding_est > 0:
+        annual_div_cash_total = annual_div * shares_outstanding_est
+
     fcf_coverage = None
-    if fcf and annual_div and annual_div > 0:
-        # Convert annual_div from yield% to actual if needed
-        if annual_div < 1:  # Likely a percentage
-            annual_div_amount = annual_div * current_price if current_price else 0
-        else:
-            annual_div_amount = annual_div
-        fcf_coverage = fcf / annual_div_amount if annual_div_amount else None
+    if fcf and annual_div_cash_total and annual_div_cash_total > 0:
+        fcf_coverage = fcf / annual_div_cash_total
     
     # Safety assessment
     safety_factors = []
-    if payout_ratio and payout_ratio < 0.5:
+    if payout_ratio is None:
+        safety_factors.append("Payout ratio unavailable")
+    elif payout_ratio < 0.5:
         safety_factors.append("Low payout ratio (<50%)")
-    elif payout_ratio and payout_ratio < 0.75:
+    elif payout_ratio < 0.75:
         safety_factors.append("Moderate payout ratio (50-75%)")
     else:
         safety_factors.append("High payout ratio (>75%) - risk if earnings decline")
     
-    if fcf_coverage and fcf_coverage > 1.5:
+    if fcf_coverage is not None and fcf_coverage > 1.5:
         safety_factors.append("Strong FCF coverage (>1.5x)")
-    elif fcf_coverage and fcf_coverage > 1.0:
+    elif fcf_coverage is not None and fcf_coverage > 1.0:
         safety_factors.append("Adequate FCF coverage (>1x)")
+    elif fcf and annual_div and annual_div > 0 and annual_div_cash_total is None:
+        safety_factors.append("FCF coverage unavailable (missing market cap/price for share count estimate)")
     
     # Verdict
     if dividend_yield and dividend_yield > 0.03:
@@ -111,7 +129,7 @@ try:
         verdict = "No dividend"
     elif payout_ratio and payout_ratio > 0.9:
         verdict = "Unsafe - payout exceeds earnings"
-    elif fcf_coverage and fcf_coverage < 0.8:
+    elif fcf_coverage is not None and fcf_coverage < 0.8:
         verdict = "Risky - FCF doesn't cover dividends"
     elif payout_ratio and payout_ratio > 0.75:
         verdict = "Moderate - high payout ratio"
@@ -123,13 +141,19 @@ try:
         "current_price": current_price,
         "dividend": {
             "yield": dividend_yield,
+            "yield_percent": round(dividend_yield * 100, 2) if dividend_yield is not None else None,
+            "yield_raw": dividend_yield_raw,
             "trailing_yield": trailing_div,
+            "trailing_yield_percent": round(trailing_div * 100, 2) if trailing_div is not None else None,
+            "trailing_yield_raw": trailing_div_raw,
             "annual_estimated": annual_div,
             "growth_5y_cagr": round(div_growth, 4) if div_growth else None,
             "history": div_history
         },
         "payout_ratio": payout_ratio,
-        "fcf_coverage": round(fcf_coverage, 2) if fcf_coverage else None,
+        "estimated_shares_outstanding": int(round(shares_outstanding_est)) if shares_outstanding_est else None,
+        "annual_dividend_cash_total": round(annual_div_cash_total, 2) if annual_div_cash_total else None,
+        "fcf_coverage": round(fcf_coverage, 2) if fcf_coverage is not None else None,
         "safety": {
             "factors": safety_factors,
             "verdict": verdict,
