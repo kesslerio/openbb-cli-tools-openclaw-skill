@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 # OpenBB quality scoring tool
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/_openbb_common.sh"
+
 
 if [ $# -lt 1 ]; then
     echo "Usage: openbb-quality SYMBOL"
@@ -7,11 +13,7 @@ if [ $# -lt 1 ]; then
 fi
 
 export SYMBOL="$1"
-LIBSTDCXX=$(nix-build -E "with import <nixpkgs> {}; stdenv.cc.cc.lib" --no-out-link 2>/dev/null)/lib
-LIBZ=$(nix-build -E "with import <nixpkgs> {}; zlib" --no-out-link 2>/dev/null)/lib
-export LD_LIBRARY_PATH="$LIBSTDCXX:$LIBZ:${LD_LIBRARY_PATH:-}"
-
-/home/art/.local/venvs/openbb/bin/python3 << 'PYEOF'
+run_openbb_python_with_retry << 'PYEOF'
 import os
 import sys
 import json
