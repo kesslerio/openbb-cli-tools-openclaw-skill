@@ -19,7 +19,7 @@ Notes:
   - CLI output format can vary; do not treat it as a stable machine interface.
 
 Env:
-  OPENBB_CLI_BIN          Override CLI binary path (default: ~/.local/bin/openbb)
+  OPENBB_CLI_BIN          Override CLI binary path (default search: ~/.local/bin, ~/.local/venvs, PATH)
   OPENBB_CLI_TIMEOUT_SEC  Timeout in seconds (default: 180)
 EOF
 }
@@ -31,13 +31,22 @@ fi
 
 setup_openbb_ld_library_path
 
-OPENBB_CLI_BIN="${OPENBB_CLI_BIN:-$HOME/.local/bin/openbb}"
-if [[ ! -x "$OPENBB_CLI_BIN" ]]; then
-    OPENBB_CLI_BIN="$HOME/.local/venvs/openbb/bin/openbb"
-fi
-if [[ ! -x "$OPENBB_CLI_BIN" ]]; then
-    echo "OpenBB CLI binary not found. Set OPENBB_CLI_BIN or install OpenBB CLI." >&2
-    exit 1
+if [[ -n "${OPENBB_CLI_BIN:-}" ]]; then
+    if [[ ! -x "$OPENBB_CLI_BIN" ]]; then
+        echo "OPENBB_CLI_BIN is set but not executable: $OPENBB_CLI_BIN" >&2
+        exit 1
+    fi
+else
+    if [[ -x "$HOME/.local/bin/openbb" ]]; then
+        OPENBB_CLI_BIN="$HOME/.local/bin/openbb"
+    elif [[ -x "$HOME/.local/venvs/openbb/bin/openbb" ]]; then
+        OPENBB_CLI_BIN="$HOME/.local/venvs/openbb/bin/openbb"
+    elif command -v openbb >/dev/null 2>&1; then
+        OPENBB_CLI_BIN="$(command -v openbb)"
+    else
+        echo "OpenBB CLI binary not found. Set OPENBB_CLI_BIN or install OpenBB CLI." >&2
+        exit 1
+    fi
 fi
 
 TIMEOUT_SEC="${OPENBB_CLI_TIMEOUT_SEC:-180}"
