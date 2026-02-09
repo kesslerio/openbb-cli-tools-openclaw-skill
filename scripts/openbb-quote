@@ -86,7 +86,9 @@ while true; do
     output=""
     status=0
 
-    if ! output="$(run_openbb_quote_once 2>&1)"; then
+    if output="$(run_openbb_quote_once 2>&1)"; then
+        status=0
+    else
         status=$?
     fi
 
