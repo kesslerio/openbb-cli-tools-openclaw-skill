@@ -135,3 +135,9 @@ User: "Is NVDA overvalued?"
 **Empty results:** Some endpoints need paid FMP subscription. Check the "Data Providers" section.
 
 **Timeout:** Some queries are slow on first run (SDK initialization). Retry usually works.
+
+**OpenBB build lock contention (`.build.lock`):**
+- `openbb-quote` now retries automatically with exponential backoff when another OpenBB process is building extensions.
+- Tune behavior with environment variables:
+  - `OPENBB_RETRY_MAX_ATTEMPTS` (default: `6`)
+  - `OPENBB_RETRY_BASE_DELAY_SEC` (default: `2`)

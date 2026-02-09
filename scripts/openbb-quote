@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # OpenBB stock quote wrapper for clawdbot (NixOS-compatible) - Multi-ticker support
 
+set -euo pipefail
+
 if [ $# -lt 1 ]; then
     echo "Usage: openbb-quote SYMBOL [SYMBOL2 ...] [provider]"
     exit 1
@@ -31,8 +33,21 @@ done
 export _OPENBB_PROVIDER="$PROVIDER"
 export _OPENBB_TICKERS="$(printf '%s\n' "${TICKERS[@]}")"
 
-# Use venv's python with full OpenBB SDK
-/home/art/.local/venvs/openbb/bin/python3 << 'PYTHON'
+# Retry knobs (handles transient OpenBB package build lock contention)
+MAX_ATTEMPTS="${OPENBB_RETRY_MAX_ATTEMPTS:-6}"
+BASE_DELAY_SEC="${OPENBB_RETRY_BASE_DELAY_SEC:-2}"
+
+is_lock_contention() {
+    local text="$1"
+    [[ "$text" == *".build.lock"* ]] \
+        || [[ "$text" == *"Another build process is running"* ]] \
+        || [[ "$text" == *"BlockingIOError"* ]] \
+        || [[ "$text" == *"Resource temporarily unavailable"* ]]
+}
+
+run_openbb_quote_once() {
+    # Use venv's python with full OpenBB SDK
+    /home/art/.local/venvs/openbb/bin/python3 << 'PYTHON'
 from openbb import obb
 import json
 import os
@@ -64,3 +79,38 @@ for symbol in TICKERS:
 
 print(json.dumps(results, indent=2))
 PYTHON
+}
+
+attempt=1
+while true; do
+    output=""
+    status=0
+
+    if ! output="$(run_openbb_quote_once 2>&1)"; then
+        status=$?
+    fi
+
+    if [ "$status" -eq 0 ]; then
+        printf "%s\n" "$output"
+        exit 0
+    fi
+
+    if is_lock_contention "$output"; then
+        if [ "$attempt" -ge "$MAX_ATTEMPTS" ]; then
+            {
+                echo "openbb-quote failed after ${MAX_ATTEMPTS} lock-contention retries."
+                echo "$output"
+            } >&2
+            exit "$status"
+        fi
+
+        delay=$((BASE_DELAY_SEC * (2 ** (attempt - 1))))
+        echo "openbb-quote: build lock detected, retry ${attempt}/${MAX_ATTEMPTS} in ${delay}s..." >&2
+        sleep "$delay"
+        attempt=$((attempt + 1))
+        continue
+    fi
+
+    printf "%s\n" "$output" >&2
+    exit "$status"
+done
