@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# OpenBB CLI fallback for capabilities not covered by wrapper scripts.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+# shellcheck source=/dev/null
+source "$SCRIPT_DIR/_openbb_common.sh"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  openbb-cli-fallback --file ROUTINE.openbb
+  openbb-cli-fallback --help
+  openbb-cli-fallback --version
+
+Notes:
+  - Wrapper scripts (openbb-quote, openbb-ratios, etc.) should be used first.
+  - Use this command only when wrappers do not cover the requested endpoint/workflow.
+  - CLI output format can vary; do not treat it as a stable machine interface.
+
+Env:
+  OPENBB_CLI_BIN          Override CLI binary path (default: ~/.local/bin/openbb)
+  OPENBB_CLI_TIMEOUT_SEC  Timeout in seconds (default: 180)
+EOF
+}
+
+if [[ $# -lt 1 ]]; then
+    usage >&2
+    exit 1
+fi
+
+setup_openbb_ld_library_path
+
+OPENBB_CLI_BIN="${OPENBB_CLI_BIN:-$HOME/.local/bin/openbb}"
+if [[ ! -x "$OPENBB_CLI_BIN" ]]; then
+    OPENBB_CLI_BIN="$HOME/.local/venvs/openbb/bin/openbb"
+fi
+if [[ ! -x "$OPENBB_CLI_BIN" ]]; then
+    echo "OpenBB CLI binary not found. Set OPENBB_CLI_BIN or install OpenBB CLI." >&2
+    exit 1
+fi
+
+TIMEOUT_SEC="${OPENBB_CLI_TIMEOUT_SEC:-180}"
+if command -v timeout >/dev/null 2>&1; then
+    timeout "$TIMEOUT_SEC" "$OPENBB_CLI_BIN" "$@"
+    exit $?
+fi
+
+"$OPENBB_CLI_BIN" "$@"

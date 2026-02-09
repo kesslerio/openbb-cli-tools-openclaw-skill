@@ -29,6 +29,13 @@ Fetch stock market data using OpenBB SDK CLI wrappers. All output is JSON.
 | `openbb-ev-ntm` | EV/NTM revenue | `openbb-ev-ntm CRM` |
 | `openbb-profile` | Company info | `openbb-profile DIS` |
 | `openbb-ownership` | Institutional ownership | `openbb-ownership AAPL` |
+| `openbb-cli-fallback` | Raw OpenBB CLI passthrough for uncovered cases | `openbb-cli-fallback --help` |
+
+## Command Selection Policy
+
+1. Use wrapper scripts first (`openbb-quote`, `openbb-ratios`, etc.).
+2. Use `openbb-cli-fallback` only if wrappers do not cover the requested endpoint/workflow.
+3. Treat CLI output as non-stable text output unless you explicitly control the routine and output format.
 
 ## Usage Patterns
 
@@ -60,6 +67,12 @@ Fetch stock market data using OpenBB SDK CLI wrappers. All output is JSON.
 
 # Cash flow statement, 3 years  
 <skill>/scripts/openbb-financials AAPL cash 3
+```
+
+### CLI Fallback (Uncovered Endpoints)
+```bash
+# Run a routine file through OpenBB CLI
+<skill>/scripts/openbb-cli-fallback --file ./my-routine.openbb
 ```
 
 ## Data Providers
@@ -135,6 +148,8 @@ User: "Is NVDA overvalued?"
 **Empty results:** Some endpoints need paid FMP subscription. Check the "Data Providers" section.
 
 **Timeout:** Some queries are slow on first run (SDK initialization). Retry usually works.
+
+**Need an endpoint not covered by wrappers:** Use `openbb-cli-fallback --file <routine.openbb>` as temporary fallback, then add a dedicated wrapper for repeat usage.
 
 **OpenBB build lock contention (`.build.lock`):**
 - `openbb-quote` now retries automatically with exponential backoff when another OpenBB process is building extensions.

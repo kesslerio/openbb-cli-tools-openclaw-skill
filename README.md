@@ -39,6 +39,13 @@ ln -s /path/to/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
 | `openbb-estimates` | Analyst targets, recommendations | yfinance (falls back to fmp) |
 | `openbb-earnings` | Next earnings + EPS history | yfinance + FMP |
 | `openbb-ownership` | Institutional ownership | fmp (falls back to intrinio, sec) |
+| `openbb-cli-fallback` | Raw OpenBB CLI passthrough for uncovered endpoints | OpenBB CLI |
+
+## Command Policy
+
+1. Use `openbb-*` wrappers first for automation and stable JSON contracts.
+2. Use `openbb-cli-fallback` only when wrappers do not cover the requested endpoint/workflow.
+3. If fallback usage repeats, promote it into a new dedicated wrapper.
 
 ## Usage
 
@@ -59,6 +66,11 @@ Multiple tickers:
 Specify provider:
 ```bash
 ./scripts/openbb-quote AAPL fmp
+```
+
+CLI fallback:
+```bash
+./scripts/openbb-cli-fallback --file ./my-routine.openbb
 ```
 
 ## Data Providers
