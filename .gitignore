@@ -1,0 +1,22 @@
+# Environment variables for local testing
+.env
+
+# macOS
+.DS_Store
+
+# Editor backups
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# IDE
+.vscode/
+.idea/
+*.iml

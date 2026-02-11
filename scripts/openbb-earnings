@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-earnings SYMBOL"
+    echo "Usage: openbb-earnings SYMBOL [provider]"
     exit 1
 fi
 
 SYMBOL="$1"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 
 run_openbb_python_with_retry << PYTHON
 from openbb import obb
@@ -41,7 +42,7 @@ try:
     
     # Try to get next earnings date from profile
     try:
-        profile = obb.equity.profile(symbol=symbol, provider='yfinance')
+        profile = obb.equity.profile(symbol=symbol, provider='$PROVIDER')
         if profile and profile.results:
             next_date = safe_get(profile.results[0], 'earnings_date')
             if next_date:

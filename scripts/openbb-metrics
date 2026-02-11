@@ -8,14 +8,13 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-metrics SYMBOL"
+    echo "Usage: openbb-metrics SYMBOL [provider]"
     exit 1
 fi
 
 SYMBOL="$1"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 
-# Set library path for NixOS
-# Use venv's python directly
 run_openbb_python_with_retry << PYTHON
 from openbb import obb
 import json
@@ -24,7 +23,7 @@ symbol = "$SYMBOL"
 
 try:
     # Get key metrics
-    result = obb.equity.fundamental.metrics(symbol=symbol, provider='yfinance')
+    result = obb.equity.fundamental.metrics(symbol=symbol, provider='$PROVIDER')
     
     if not result.results:
         print(json.dumps({"error": "No metrics data found"}))

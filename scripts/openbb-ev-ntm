@@ -9,11 +9,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 # Estimates NTM revenue from TTM × (1 + growth rate)
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-ev-ntm SYMBOL"
+    echo "Usage: openbb-ev-ntm SYMBOL [provider]"
     exit 1
 fi
 
 SYMBOL="$1"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 
 run_openbb_python_with_retry << PYSCRIPT
 import json
@@ -34,13 +35,13 @@ def safe_get(obj, attr, default=None):
 
 try:
     # Get market cap from profile
-    profile = obb.equity.profile(symbol=symbol, provider='yfinance')
+    profile = obb.equity.profile(symbol=symbol, provider='$PROVIDER')
     market_cap = None
     if profile and profile.results:
         market_cap = safe_get(profile.results[0], 'market_cap')
     
     # Get TTM revenue and growth from income statement
-    income = obb.equity.fundamental.income(symbol=symbol, provider='yfinance', limit=2)
+    income = obb.equity.fundamental.income(symbol=symbol, provider='$PROVIDER', limit=2)
     ttm_revenue = None
     revenue_growth = None
     

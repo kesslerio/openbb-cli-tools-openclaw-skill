@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-technicals SYMBOL"
+    echo "Usage: openbb-technicals SYMBOL [provider]"
     exit 1
 fi
 
 SYMBOL="$1"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 
 run_openbb_python_with_retry << PYSCRIPT
 import json
@@ -35,7 +36,7 @@ try:
     
     data = obb.equity.price.historical(
         symbol=symbol,
-        provider='yfinance',
+        provider='$PROVIDER',
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d')
     )

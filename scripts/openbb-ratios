@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-ratios SYMBOL"
+    echo "Usage: openbb-ratios SYMBOL [provider]"
     exit 1
 fi
 
 SYMBOL="$1"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 run_openbb_python_with_retry << PYTHON
 from openbb import obb
 import json
@@ -28,7 +29,7 @@ def safe_get(obj, attr, default=None):
     return getattr(obj, attr, default)
 
 try:
-    result = obb.equity.fundamental.metrics(symbol=symbol, provider='yfinance')
+    result = obb.equity.fundamental.metrics(symbol=symbol, provider='$PROVIDER')
     if not result or not result.results:
         print(json.dumps({"error": "No data found", "symbol": symbol}))
         sys.exit(1)

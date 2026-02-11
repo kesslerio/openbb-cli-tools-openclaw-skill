@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Shared runtime helpers for OpenBB wrapper scripts.
 
+# Source .env from project root if it exists (for local testing)
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../.env" ]]; then
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../.env"
+fi
+
 resolve_openbb_python() {
     if [[ -n "${OPENBB_PYTHON:-}" ]]; then
         if [[ -x "${OPENBB_PYTHON}" ]]; then
@@ -47,6 +54,18 @@ setup_openbb_ld_library_path() {
         local joined=""
         joined="$(IFS=:; echo "${parts[*]}")"
         export LD_LIBRARY_PATH="${joined}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+    fi
+}
+
+resolve_openbb_provider() {
+    local explicit="${1:-}"
+    local fallback="${2:-yfinance}"
+    if [[ -n "${explicit}" ]]; then
+        printf "%s\n" "${explicit}"
+    elif [[ -n "${OPENBB_DEFAULT_PROVIDER:-}" ]]; then
+        printf "%s\n" "${OPENBB_DEFAULT_PROVIDER}"
+    else
+        printf "%s\n" "${fallback}"
     fi
 }
 

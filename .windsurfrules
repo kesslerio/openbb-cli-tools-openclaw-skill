@@ -1,0 +1,16 @@
+# Windsurf Workspace Rules — OpenBB CLI Tools (OpenClaw Skill)
+#
+# All agent instructions live in AGENTS.md (single source of truth).
+# CLAUDE.md is a symlink to AGENTS.md for Claude Code compatibility.
+# Read AGENTS.md before making any changes to this project.
+
+## Core Rules
+
+1. Read `AGENTS.md` at the start of every task for project context, conventions, and constraints.
+2. Every script in `scripts/` must use `set -euo pipefail` and source `_openbb_common.sh`.
+3. All scripts emit **JSON to stdout only**. Diagnostics and errors go to stderr.
+4. Default data provider is `yfinance` (free). Never hardcode API keys.
+5. Run `shellcheck scripts/*` before committing shell changes.
+6. Keep `SKILL.md` frontmatter and `README.md` tool table in sync when adding/removing scripts.
+7. Use `run_openbb_python_with_retry` for all embedded Python execution.
+8. Do not modify `_openbb_common.sh` without testing all scripts that source it.

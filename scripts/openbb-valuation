@@ -8,11 +8,13 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-valuation SYMBOL"
+    echo "Usage: openbb-valuation SYMBOL [provider]"
     exit 1
 fi
 
 export SYMBOL="$1"
+_OPENBB_PROVIDER="$(resolve_openbb_provider "${2:-}")"
+export _OPENBB_PROVIDER
 run_openbb_python_with_retry << 'PYEOF'
 import os
 import sys
@@ -20,14 +22,15 @@ import json
 from openbb import obb
 
 SYMBOL = os.environ.get('SYMBOL', '')
+PROVIDER = os.environ.get('_OPENBB_PROVIDER', 'yfinance')
 
 def safe_get(obj, attr, default=None):
     return getattr(obj, attr, default) if obj else default
 
 try:
     # Get current quote
-    quote = obb.equity.price.quote(symbol=SYMBOL, provider='yfinance')
-    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    quote = obb.equity.price.quote(symbol=SYMBOL, provider=PROVIDER)
+    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider=PROVIDER)
     
     if not quote or not quote.results:
         print(json.dumps({"error": "No quote data found", "symbol": SYMBOL}))
