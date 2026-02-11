@@ -133,7 +133,7 @@ export OPENBB_DEFAULT_PROVIDER=fmp
 ./scripts/openbb-financials 9988.HK income 3
 ```
 
-> **Note:** Finnhub is not a supported OpenBB provider (no `openbb-finnhub` package). It would require a custom provider extension — see [#13](https://github.com/kesslerio/openbb-cli-tools-openclaw-skill/issues/13).
+> **Note:** Finnhub is not a supported OpenBB provider (no `openbb-finnhub` package). It would require a custom provider extension — see [#14](https://github.com/kesslerio/openbb-cli-tools-openclaw-skill/issues/14).
 
 ## License
 
