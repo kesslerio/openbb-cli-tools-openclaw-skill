@@ -46,7 +46,7 @@ OpenClaw skill providing stock market data via OpenBB SDK CLI wrappers. All 18 s
 ## Code Conventions
 
 - **Shell style:** `set -euo pipefail` in every script; POSIX-compatible where possible
-- **Shared code:** All scripts source `_openbb_common.sh` for `resolve_openbb_python`, `resolve_openbb_provider`, `setup_openbb_ld_library_path`, and `run_openbb_python_with_retry`
+- **Shared code:** All scripts source `_openbb_common.sh` for `resolve_openbb_python`, `resolve_openbb_provider`, `setup_openbb_ld_library_path`, and `run_openbb_python_with_retry`. This file also auto-sources `.env` from project root for local testing.
 - **Python embedding:** Inline heredocs (`<< 'PYTHON'`) executed via `run_openbb_python_with_retry`
 - **Environment variables** pass data from Bash → Python (prefixed `_OPENBB_`)
 - **Output contract:** Every script prints valid JSON to stdout; never mix stderr into stdout

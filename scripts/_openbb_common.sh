@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # Shared runtime helpers for OpenBB wrapper scripts.
 
+# Source .env from project root if it exists (for local testing)
+SCRIPT_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)"
+if [[ -f "$SCRIPT_DIR/../.env" ]]; then
+    # shellcheck source=/dev/null
+    source "$SCRIPT_DIR/../.env"
+fi
+
 resolve_openbb_python() {
     if [[ -n "${OPENBB_PYTHON:-}" ]]; then
         if [[ -x "${OPENBB_PYTHON}" ]]; then

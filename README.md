@@ -18,6 +18,21 @@ ln -s /path/to/openbb-cli-tools-openclaw-skill ~/.openclaw/skills/openbb
 - `jq` for multi-ticker support
 - (Optional) FMP API key for enhanced earnings/ownership data
 
+## Local Configuration (.env)
+
+Scripts automatically source a `.env` file from the project root for local testing:
+
+```bash
+# Copy the example and edit
+cp .env.example .env
+
+# Add your API keys and preferences
+# FMP_API_KEY=your_key_here
+# OPENBB_DEFAULT_PROVIDER=fmp
+```
+
+All environment variables are gitignored and sourced by `scripts/_openbb_common.sh`.
+
 ## Tools
 
 | Script | Description | Default Provider |
