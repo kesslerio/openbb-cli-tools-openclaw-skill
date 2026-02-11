@@ -85,6 +85,8 @@ All scripts respect the `OPENBB_DEFAULT_PROVIDER` environment variable. Resoluti
 2. **`OPENBB_DEFAULT_PROVIDER` env var** — global override
 3. **`yfinance`** — default fallback (free, no API key)
 
+Most scripts accept an optional `[provider]` CLI argument; `openbb-financials` and `openbb-historical` currently rely on `OPENBB_DEFAULT_PROVIDER` only.
+
 ### yfinance (Default - Free, No API Key)
 All tools use yfinance by default. Works for quotes, financials, ratios, dividends, estimates, technicals.
 

@@ -13,7 +13,8 @@ if [ $# -lt 1 ]; then
 fi
 
 export SYMBOL="$1"
-export _OPENBB_PROVIDER="$(resolve_openbb_provider "${2:-}")"
+_OPENBB_PROVIDER="$(resolve_openbb_provider "${2:-}")"
+export _OPENBB_PROVIDER
 run_openbb_python_with_retry << 'PYEOF'
 import os
 import sys
