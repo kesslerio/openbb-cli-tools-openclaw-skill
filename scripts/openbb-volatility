@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-volatility SYMBOL"
+    echo "Usage: openbb-volatility SYMBOL [provider]"
     exit 1
 fi
 
 export SYMBOL="$1"
+export _OPENBB_PROVIDER="$(resolve_openbb_provider "${2:-}")"
 run_openbb_python_with_retry << 'PYEOF'
 import os
 import sys
@@ -22,6 +23,7 @@ from datetime import datetime, timedelta
 from openbb import obb
 
 SYMBOL = os.environ.get('SYMBOL', '')
+PROVIDER = os.environ.get('_OPENBB_PROVIDER', 'yfinance')
 
 def safe_get(obj, attr, default=None):
     return getattr(obj, attr, default) if obj else default
@@ -33,7 +35,7 @@ try:
     
     hist = obb.equity.price.historical(
         symbol=SYMBOL,
-        provider='yfinance',
+        provider=PROVIDER,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
         interval='1d'

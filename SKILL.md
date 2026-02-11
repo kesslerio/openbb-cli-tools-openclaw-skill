@@ -77,6 +77,14 @@ Fetch stock market data using OpenBB SDK CLI wrappers. All output is JSON.
 
 ## Data Providers
 
+### Provider Selection
+
+All scripts respect the `OPENBB_DEFAULT_PROVIDER` environment variable. Resolution order:
+
+1. **CLI argument** (e.g., `openbb-ratios AAPL fmp`) — highest priority
+2. **`OPENBB_DEFAULT_PROVIDER` env var** — global override
+3. **`yfinance`** — default fallback (free, no API key)
+
 ### yfinance (Default - Free, No API Key)
 All tools use yfinance by default. Works for quotes, financials, ratios, dividends, estimates, technicals.
 
@@ -94,6 +102,20 @@ Some tools benefit from FMP for additional data:
 2. Set environment variable: `export FMP_API_KEY="your_key"`
 
 See [FMP pricing](https://site.financialmodelingprep.com/developer/docs/pricing) for tier details.
+
+### Asian Market Tickers (.T, .TW, .HK)
+
+yfinance supports Asian exchange tickers but can be slow (~9s per call). Use `OPENBB_DEFAULT_PROVIDER` or per-command provider arg for better latency:
+
+```bash
+# Per-command
+<skill>/scripts/openbb-quote 7203.T fmp
+
+# Global override for batch queries
+export OPENBB_DEFAULT_PROVIDER=fmp
+<skill>/scripts/openbb-quote 7203.T
+<skill>/scripts/openbb-ratios 2330.TW
+```
 
 ## Output Formatting
 

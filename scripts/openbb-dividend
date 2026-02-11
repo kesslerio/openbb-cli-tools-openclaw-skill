@@ -8,11 +8,12 @@ source "$SCRIPT_DIR/_openbb_common.sh"
 
 
 if [ $# -lt 1 ]; then
-    echo "Usage: openbb-dividend SYMBOL"
+    echo "Usage: openbb-dividend SYMBOL [provider]"
     exit 1
 fi
 
 export SYMBOL="$1"
+export _OPENBB_PROVIDER="$(resolve_openbb_provider "${2:-}")"
 run_openbb_python_with_retry << 'PYEOF'
 import os
 import sys
@@ -20,6 +21,7 @@ import json
 from openbb import obb
 
 SYMBOL = os.environ.get('SYMBOL', '')
+PROVIDER = os.environ.get('_OPENBB_PROVIDER', 'yfinance')
 
 def safe_get(obj, attr, default=None):
     return getattr(obj, attr, default) if obj else default
@@ -42,16 +44,16 @@ def normalize_yield_ratio(value):
 
 try:
     # Get metrics
-    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider='yfinance')
+    metrics = obb.equity.fundamental.metrics(symbol=SYMBOL, provider=PROVIDER)
     
     # Get quote for current price
-    quote = obb.equity.price.quote(symbol=SYMBOL, provider='yfinance')
+    quote = obb.equity.price.quote(symbol=SYMBOL, provider=PROVIDER)
     current_price = None
     if quote and quote.results:
         current_price = safe_get(quote.results[0], 'last_price')
     
     # Get dividend data
-    divs = obb.equity.fundamental.dividends(symbol=SYMBOL, provider='yfinance', limit=20)
+    divs = obb.equity.fundamental.dividends(symbol=SYMBOL, provider=PROVIDER, limit=20)
     
     result = metrics.results[0] if metrics and metrics.results else None
     
@@ -159,7 +161,7 @@ try:
             "verdict": verdict,
             "yield_level": yield_level
         },
-        "note": "Using yfinance provider. FMP provides more detailed data."
+        "note": f"Using {PROVIDER} provider. FMP provides more detailed data."
     }
     
     print(json.dumps(output, indent=2))

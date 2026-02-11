@@ -13,7 +13,7 @@ if [ $# -lt 1 ]; then
 fi
 
 SYMBOL="$1"
-PROVIDER="${2:-yfinance}"
+PROVIDER="$(resolve_openbb_provider "${2:-}")"
 
 run_openbb_python_with_retry << PYTHON
 from openbb import obb

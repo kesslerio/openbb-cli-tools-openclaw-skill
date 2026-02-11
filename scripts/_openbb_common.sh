@@ -50,6 +50,18 @@ setup_openbb_ld_library_path() {
     fi
 }
 
+resolve_openbb_provider() {
+    local explicit="${1:-}"
+    local fallback="${2:-yfinance}"
+    if [[ -n "${explicit}" ]]; then
+        printf "%s\n" "${explicit}"
+    elif [[ -n "${OPENBB_DEFAULT_PROVIDER:-}" ]]; then
+        printf "%s\n" "${OPENBB_DEFAULT_PROVIDER}"
+    else
+        printf "%s\n" "${fallback}"
+    fi
+}
+
 is_openbb_lock_contention() {
     local text="$1"
     [[ "${text}" == *".build.lock"* ]] \

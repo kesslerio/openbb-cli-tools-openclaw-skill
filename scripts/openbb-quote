@@ -13,19 +13,21 @@ fi
 
 # Set library path for NixOS
 # Detect provider: if last arg is a valid provider, use it
-PROVIDER="yfinance"
+EXPLICIT_PROVIDER=""
 TICKERS=()
 
 for arg in "$@"; do
     case "$arg" in
-        fmp|intrinio|yfinance)
-            PROVIDER="$arg"
+        fmp|intrinio|yfinance|tiingo|polygon|alphavantage)
+            EXPLICIT_PROVIDER="$arg"
             ;;
         *)
             TICKERS+=("$arg")
             ;;
     esac
 done
+
+PROVIDER="$(resolve_openbb_provider "${EXPLICIT_PROVIDER}" "yfinance")"
 
 # Export for Python
 export _OPENBB_PROVIDER="$PROVIDER"

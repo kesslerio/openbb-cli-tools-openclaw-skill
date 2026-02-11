@@ -15,9 +15,8 @@ fi
 
 SYMBOL="$1"
 PERIOD="${2:-1y}"
+PROVIDER="$(resolve_openbb_provider "" "yfinance")"
 
-# Set library path for NixOS
-# Use venv's python directly - calculate dates in Python
 run_openbb_python_with_retry << PYTHON
 from openbb import obb
 import json
@@ -54,7 +53,7 @@ try:
         symbol=symbol,
         start_date=start_date.strftime('%Y-%m-%d'),
         end_date=end_date.strftime('%Y-%m-%d'),
-        provider='yfinance'
+        provider='$PROVIDER'
     )
     
     if not result.results:

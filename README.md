@@ -63,9 +63,17 @@ Multiple tickers:
 ./scripts/openbb-quote AAPL MSFT GOOGL
 ```
 
-Specify provider:
+Specify provider per-command:
 ```bash
 ./scripts/openbb-quote AAPL fmp
+./scripts/openbb-ratios 7203.T fmp
+```
+
+Override default provider globally (useful for Asian market tickers):
+```bash
+export OPENBB_DEFAULT_PROVIDER=fmp
+./scripts/openbb-quote 7203.T
+./scripts/openbb-ratios 7203.T
 ```
 
 CLI fallback:
@@ -74,6 +82,14 @@ CLI fallback:
 ```
 
 ## Data Providers
+
+### Provider Selection
+
+All scripts respect the `OPENBB_DEFAULT_PROVIDER` environment variable. The resolution order is:
+
+1. **CLI argument** (e.g., `openbb-ratios AAPL fmp`) — highest priority
+2. **`OPENBB_DEFAULT_PROVIDER` env var** — global override
+3. **`yfinance`** — default fallback (free, no API key)
 
 ### yfinance (Default - Free, No API Key)
 
@@ -84,7 +100,7 @@ Most tools use yfinance by default. Works for quotes, financials, ratios, divide
 Some tools benefit from FMP for additional data:
 
 | Tool | Without FMP | With FMP (paid) |
-|------|-------------|-----------------|
+|------|-------------|------------------|
 | `openbb-earnings` | Next earnings date (yfinance) | + Historical EPS with beat/miss tracking |
 | `openbb-ownership` | Falls back to intrinio/sec | Full institutional ownership data |
 
@@ -93,6 +109,31 @@ Setup:
 2. `export FMP_API_KEY="your_key"`
 
 See [FMP pricing](https://site.financialmodelingprep.com/developer/docs/pricing) for tier details.
+
+### Asian Market Tickers (.T, .TW, .HK)
+
+yfinance supports Asian exchange tickers but can be slow (~9s per call through OpenBB subprocess). Alternative providers may offer better latency:
+
+| Provider | Package | Asian Market Coverage | Notes |
+|----------|---------|----------------------|-------|
+| FMP | `openbb-fmp` | Global equities incl. Japan/Taiwan/HK | Paid API key required |
+| Tiingo | `openbb-tiingo` | US + some intl EOD | Worth testing for `.T`/`.TW` support |
+| Alpha Vantage | `openbb-alphavantage` | Global equities, FX | Free tier is rate-limited |
+| Polygon.io | `openbb-polygon` | US-focused, limited intl | May not cover `.T`/`.TW` |
+
+To use FMP for Asian tickers:
+```bash
+# Per-command
+./scripts/openbb-quote 7203.T fmp
+
+# Global override
+export OPENBB_DEFAULT_PROVIDER=fmp
+./scripts/openbb-quote 7203.T
+./scripts/openbb-ratios 2330.TW
+./scripts/openbb-financials 9988.HK income 3
+```
+
+> **Note:** Finnhub is not a supported OpenBB provider (no `openbb-finnhub` package). It would require a custom provider extension — see [#13](https://github.com/kesslerio/openbb-cli-tools-openclaw-skill/issues/13).
 
 ## License
 

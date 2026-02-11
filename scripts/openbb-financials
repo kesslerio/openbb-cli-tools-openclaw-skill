@@ -15,8 +15,8 @@ fi
 SYMBOL="$1"
 STATEMENT="${2:-income}"
 YEARS="${3:-5}"
+PROVIDER="$(resolve_openbb_provider "" "yfinance")"
 
-# Write and execute Python script
 run_openbb_python_with_retry << PYSCRIPT
 import os
 import sys
@@ -207,16 +207,16 @@ try:
     
     if statement in ['income', 'all', 'cash', 'balance']:
         # Always fetch income for revenue (needed for margin calculations)
-        income_data = obb.equity.fundamental.income(symbol=symbol, provider='yfinance', limit=years)
+        income_data = obb.equity.fundamental.income(symbol=symbol, provider='$PROVIDER', limit=years)
         if statement in ['income', 'all']:
             output['income'] = process_income(income_data)
     
     if statement in ['balance', 'all']:
-        balance_data = obb.equity.fundamental.balance(symbol=symbol, provider='yfinance', limit=years)
+        balance_data = obb.equity.fundamental.balance(symbol=symbol, provider='$PROVIDER', limit=years)
         output['balance_sheet'] = process_balance_sheet(balance_data)
     
     if statement in ['cash', 'all']:
-        cash_data = obb.equity.fundamental.cash(symbol=symbol, provider='yfinance', limit=years)
+        cash_data = obb.equity.fundamental.cash(symbol=symbol, provider='$PROVIDER', limit=years)
         output['cash_flow'] = process_cash_flow(cash_data, income_data)
     
     print(json.dumps(output, indent=2))
