@@ -1,6 +1,6 @@
 ---
 name: openbb
-description: "Stock market data via OpenBB SDK. Get quotes, financials, ratios, dividends, earnings, estimates, ownership, technicals, and valuations. Use when user asks about stocks, tickers (AAPL, MSFT, etc.), stock prices, financial ratios, P/E, dividends, analyst targets, or equity research."
+description: Raw financial data retrieval via OpenBB SDK: realtime quotes, historical prices, financial statements, ratios, dividends, earnings dates, analyst estimates, insider trades, technical indicators. Use when: 'get price of AAPL', 'P/E ratio', 'dividend history', 'balance sheet', 'analyst targets', 'revenue numbers', 'financial data'. NOT for scoring/analysis (use equity-research). NOT for news summaries (use finance-news).
 metadata: {"openclaw":{"emoji":"📈","requires":{"bins":["jq"],"env":[]}}}
 ---
 
