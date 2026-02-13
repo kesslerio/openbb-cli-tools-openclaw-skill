@@ -123,3 +123,13 @@ ls -la scripts/openbb-*
 1. Use `openbb-*` wrapper scripts first — they provide stable JSON contracts.
 2. Use `openbb-cli-fallback` only when no wrapper covers the endpoint.
 3. If a fallback pattern repeats, promote it to a dedicated wrapper.
+
+## GitHub Hygiene
+
+- PR title default: `type(scope): imperative summary`.
+- Issue title defaults:
+  - Feature: `feat: <capability> (for <surface>)`
+  - Bug: `bug: <symptom> when <condition>`
+  - Tracking: `TODO: <cleanup> after <dependency>`
+- PR body required sections: `What`, `Why`, `Tests`, `AI Assistance`.
+- `Tests` should be exact commands (for this repo, include script invocations and `shellcheck` where relevant).
