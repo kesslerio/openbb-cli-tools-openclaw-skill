@@ -20,3 +20,17 @@ __pycache__/
 .vscode/
 .idea/
 *.iml
+
+# Runtime market-data artifacts - command output belongs in temp/cache, not git
+quotes*.json
+*quotes*.json
+quote-captures*.json
+price-captures*.json
+price_captures*.json
+provider-responses/
+provider_responses/
+yahoo/
+yfinance/
+openbb/
+reports/
+tmp/
